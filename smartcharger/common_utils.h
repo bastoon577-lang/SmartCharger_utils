@@ -19,8 +19,6 @@
 //< Define des Timeout
 #define TIMEOUT_SCAN_NETWORK      300000                // Temps de scrutation des réseaux Wifi disponibles (5 Minutes)
 #define TIMEOUT_REBOOT            1000                  // Temps d'anti-rebond pour le reboot (1 Seconde)
-#define TIMEOUT_LED_LENT          500                   // Clignotement lent de la LED
-#define TIMEOUT_LED_RAPI          50                    // Clignotement rapide de la LED
 
 //< Define de gestion d'intensite sur 5 bits (optimisation spatiale de l'intensité en mémoire EEPROM)
 #define READ_OFFSET_5B(x)         (x+6)
