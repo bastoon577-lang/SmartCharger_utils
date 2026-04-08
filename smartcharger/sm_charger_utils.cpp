@@ -370,11 +370,10 @@ void sm_charger_handler(void) {
 
   /*************************************************************************************************************
    *        Etage de pilotage de l'EVSE.
+   *			Attribution de 0A pour le blocage de l'EVSE
+   *			Attribution du courant désiré autrement
    ************************************************************************************************************/
-  if(charge.flag_lock_evse)                                   // L'EVSE doit il être LOCK ?
-    hal_lock_current();
-  else                                                        // Autrement
-    hal_set_current(charge.parameters.current);
+  hal_evse_update_output((charge.flag_lock_evse)?0:charge.parameters.current); 
 
   /*************************************************************************************************************
    *        Etage de mise à jour de l'IHM Web au travers de la WebSocket Serveur
