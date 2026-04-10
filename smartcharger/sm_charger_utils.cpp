@@ -331,54 +331,55 @@ void sm_charger_handler(void) {
     sm_charger_charge_with_tic_module(&try_connexions);       // Utilisation du mécanisme de charge avec le Module TIC
 
   /*************************************************************************************************************
-   *        Etage de contrôle de l'EVSE
+   *        Etage de contrôle EVSE et d'update WS (période 1s) :
+   *			- Lecture de l'état de l'EVSE (si autorisé),
+   *			- Pilotage de l'EVSE :
+   *				- Attribution de 0A pour le blocage de l'EVSE
+   *				- Attribution du courant désiré autrement
+   *			- Mise à jour de l'IHM par WS
    ************************************************************************************************************/
   hal_evse_update_input();                                    // Scrutation de l'EVSE (Mode Polling)
-  if(millis() - timer_scrut_evse >= TIMEOUT_SCRUT_EVSE) {    
-    timer_scrut_evse = millis();
+  
+  if(millis() - timer_scrut_evse < TIMEOUT_SCRUT_EVSE) 		  // Le timer est en cours...
+    return;													  // Echappement immédiat
+	
+  timer_scrut_evse = millis();								  // Réarmement du timer
 
-    if(charge.flag_scrut_evse) {                              // La lecture de l'état de l'EVSE est autorisée
-      current_evse_state = hal_evse_get_state();
-      if(current_evse_state != previous_evse_state) {         // L'état de l'EVSE à changé ?
-        previous_evse_state = current_evse_state;             // Mise à jour vers l'état courant
-        switch(current_evse_state) {
-          case evse_Connected:
-            charge.parameters.current = START_CHARGE_CURRENT;
-            charge.parameters.state = charge_state_connected;
-            charge.is_charge_active = 0;
-            break;
-          case evse_Charging:
-            charge.parameters.state = charge_state_charging;
-            charge.is_charge_active = 1;
-			try_connexions = 0;
-            break;
-          case evse_Fault:
-            charge.parameters.current = START_CHARGE_CURRENT;
-            charge.parameters.state = charge_state_default;
-            charge.is_charge_active = 0;
-            break;
-          case evse_Not_Connected:
-          default:
-            charge.parameters.state = charge_state_not_Connected;
-            charge.parameters.current = START_CHARGE_CURRENT;
-            charge.is_charge_active = 0;
-            break;
-        }
-      }
+  // Lecture de l'état de charge VE par l'EVSE
+  if(charge.flag_scrut_evse) {                                // La lecture de l'état de l'EVSE est autorisée
+    current_evse_state = hal_evse_get_state();
+    if(current_evse_state != previous_evse_state) {           // L'état de l'EVSE à changé ?
+  	  previous_evse_state = current_evse_state;
+  	  switch(current_evse_state) {
+  	    case evse_Connected:
+  	  	  charge.parameters.current = START_CHARGE_CURRENT;
+  	  	  charge.parameters.state = charge_state_connected;
+  	  	  charge.is_charge_active = 0;
+  	  	  break;
+  	    case evse_Charging:
+  	  	  charge.parameters.state = charge_state_charging;
+  	  	  charge.is_charge_active = 1;
+  	  	  try_connexions = 0;
+  	  	  break;
+  	    case evse_Fault:
+  	  	  charge.parameters.current = START_CHARGE_CURRENT;
+  	  	  charge.parameters.state = charge_state_default;
+  	  	  charge.is_charge_active = 0;
+  	  	  break;
+  	    case evse_Not_Connected:
+  	    default:
+  	  	  charge.parameters.state = charge_state_not_Connected;
+  	  	  charge.parameters.current = START_CHARGE_CURRENT;
+  	  	  charge.is_charge_active = 0;
+  	  	  break;
+  	  }
     }
   }
 
-  /*************************************************************************************************************
-   *        Etage de pilotage de l'EVSE.
-   *			Attribution de 0A pour le blocage de l'EVSE
-   *			Attribution du courant désiré autrement
-   ************************************************************************************************************/
+  // Pilotage de l'EVSE (Courant de consigne et/ou blocage)
   hal_evse_update_output((charge.flag_lock_evse)?0:charge.parameters.current); 
 
-  /*************************************************************************************************************
-   *        Etage de mise à jour de l'IHM Web au travers de la WebSocket Serveur
-   *        Uniquement lors d'un changement de valeur (State ou Current)
-   ************************************************************************************************************/
+  // Mise à jour de l'IHM par WebSocket (uniquement si un changement à eu lieu)
   if(memcmp(&previous_charge_parameters,&charge.parameters,sizeof(CHARGE_PARAMETERS_t)) != 0) {
     memcpy(&previous_charge_parameters,&charge.parameters,sizeof(CHARGE_PARAMETERS_t));
     ws_server_send_broadcast(); 
