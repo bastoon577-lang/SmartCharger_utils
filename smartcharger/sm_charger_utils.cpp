@@ -139,9 +139,9 @@ static void sm_charger_adjust_current(int8_t available_current) {
 static void sm_charger_manage_tic_connection(uint8_t *try_connexions) {
   static bool connexion_flag = false;
   
-  bool need_connection =                                      // La connexion WS Module TIC est nécessaire
-    charge.volatile_conf->off_peak_hours ||                   // Lors de la configuration de charge en Heures Creuses uniquement
-    (charge.is_charge_active && charge.volatile_conf->tic_slaved);// Lorsqu'une charge asservie aux données TIC est en cours... 
+  bool need_connection =                                      // La connexion WS Module TIC est nécessaire lorsque :
+    charge.volatile_conf->off_peak_hours ||                   // L'option d'heure creuse uniquement est active
+    (charge.is_charge_active && charge.volatile_conf->tic_slaved);  // Le VE est en charge et l'option d'asservissement TIC est active
   
   if(!need_connection) {                                      // Aucune connexion n'est nécessaire
     if(ws_client_is_connected() || connexion_flag) {          // La connexion est établie ou en cours...
@@ -344,7 +344,7 @@ void sm_charger_handler(void) {
     return;													  // Echappement immédiat
 	
   timer_scrut_evse = millis();								  // Réarmement du timer
-
+  
   // Lecture de l'état de charge VE par l'EVSE
   if(charge.flag_scrut_evse) {                                // La lecture de l'état de l'EVSE est autorisée
     current_evse_state = hal_evse_get_state();
@@ -367,11 +367,15 @@ void sm_charger_handler(void) {
   	  	  charge.is_charge_active = 0;
   	  	  break;
   	    case evse_Not_Connected:
-  	    default:
   	  	  charge.parameters.state = charge_state_not_Connected;
   	  	  charge.parameters.current = START_CHARGE_CURRENT;
   	  	  charge.is_charge_active = 0;
   	  	  break;
+		case evse_Com_Fault:
+        default:
+          charge.parameters.state = charge_state_default_et3k;
+          charge.is_charge_active = 0;
+          break;
   	  }
     }
   }

@@ -80,7 +80,8 @@ typedef enum
   charge_state_charging_degraded  = 31,
   charge_state_wait_hc            = 40,
   charge_state_wait_hc_default    = 41,
-  charge_state_default            = 50
+  charge_state_default            = 50,
+  charge_state_default_et3k       = 51
 }CHARGE_STATE_e;
 
 //< Structure de paramètres de charge VE
