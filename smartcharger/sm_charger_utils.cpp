@@ -27,7 +27,7 @@ static inline void sm_charger_init_state(void) {
 static inline void sm_charger_adopt_limit_current(void) {
   hal_disable_interrupt();
   charge.parameters.current =
-      READ_OFFSET_5B(charge.volatile_conf->limited_current);  // Adoption du courant limite
+      READ_OFFSET_5B(charge.volatile_conf->limite_current);   // Adoption du courant limite
   hal_enable_interrupt();
 }
 
@@ -121,7 +121,11 @@ static void sm_charger_adjust_current(int8_t available_current) {
     sm_charger_waiting_before_increase(4);                    // Augmentation de 4A du courant de charge
   }
   
-  // Néanmoins, il est important de ne pas excéder la puissance maximale du réseau !
+  // Néanmoins, il ne faut pas dépasser la limite imposée !
+  if(charge.parameters.current > READ_OFFSET_5B(charge.volatile_conf->limite_current))
+    sm_charger_adopt_limit_current();
+  
+  // Mais, il est important de ne pas excéder la puissance maximale du réseau !
   if(charge.parameters.current > tic_data.isousc) {
     if(tic_data.isousc)                                       // Uniquement s'il possède une valeur (Ne peut être égal à 0) !
       charge.parameters.current = tic_data.isousc;
@@ -141,7 +145,7 @@ static void sm_charger_manage_tic_connection(uint8_t *try_connexions) {
   
   bool need_connection =                                      // La connexion WS Module TIC est nécessaire lorsque :
     charge.volatile_conf->off_peak_hours ||                   // L'option d'heure creuse uniquement est active
-    (charge.is_charge_active && charge.volatile_conf->tic_slaved);  // Le VE est en charge et l'option d'asservissement TIC est active
+    charge.is_charge_active;  							      // Le charge est en cours...
   
   if(!need_connection) {                                      // Aucune connexion n'est nécessaire
     if(ws_client_is_connected() || connexion_flag) {          // La connexion est établie ou en cours...
@@ -215,7 +219,7 @@ static void sm_charger_manage_degraded_mode(uint8_t try_connexions) {
   if(!charge.is_limited_charge)
     return;
 
-  uint8_t limit = READ_OFFSET_5B(charge.volatile_conf->limited_current);
+  uint8_t limit = READ_OFFSET_5B(charge.volatile_conf->degraded_current);
   if(charge.parameters.current > limit)                                       
     charge.parameters.current = limit;                        // Adoption du courant limite configuré
   // Autrement le courant reste inchangé (déjà limité par l'asservissement précédent !)
@@ -229,13 +233,9 @@ static void sm_charger_process_tic_data(void) {
   
   sm_charger_update_hc_state();                               // Vérification des HP/HC
 
-  if(charge.volatile_conf->tic_slaved) {                      // La configuration d'asservissement aux données TIC est active
     int8_t available_current = 
       sm_charger_compute_available_current();                 // Calcul du courant disponible sur le réseau électrique
     sm_charger_adjust_current(available_current);             // Ajustement du courant de charge VE
-  } else {                                                    // Autrement, la charge n'est pas asservie
-    sm_charger_adopt_limit_current();                         // Adoption du courant limite
-  }
 }
 
 /**
@@ -258,7 +258,7 @@ static void sm_charger_charge_with_tic_module(uint8_t *try_connexions) {
 
   sm_charger_process_tic_data();                              // Gestion du processus de charge avec les données TIC
 
-  charge.flag_lock_evse = 0;          	// Déblocage de l'EVSE, celui-ci sera bloqué après si nécessaire
+  charge.flag_lock_evse = 0;                                  // Déblocage de l'EVSE, celui-ci sera bloqué après si nécessaire
 
   if(charge.volatile_conf->off_peak_hours) {                  // La configuration Heures Creuses est active
     if(!charge.is_hc_active) {                                // Les Heures Creuses ne sont pas en cours
@@ -291,7 +291,7 @@ static void sm_charger_charge_with_tic_module(uint8_t *try_connexions) {
  *        La puissance de charge est donc statique et déterminée par l'utilisateur.
  */
 static void sm_charger_charge_without_tic_module(void) {
-  sm_charger_adopt_limit_current();                           // Adoption du courant limite
+  sm_charger_adopt_limit_current();                            // Adoption du courant limite
 }
 
 /*
