@@ -52,11 +52,11 @@ typedef struct
 //< Structure de Configurations fonctionnelles qui peuvent evoluer dans le temps (Configurable à la volé dans l'onglet d'exploitation)
 typedef struct
 {
-  uint16_t limited_current                    :5;       // Intensite lors de l'absence d'asservissement dynamique (WARNING : I = intensity + 6)
+  uint16_t degraded_current                   :5;       // Intensite dégradée en perte de communication TIC (WARNING : I = intensity + 6)
+  uint16_t limite_current                     :5;       // Intensite de charge limite (WARNING : I = intensity + 6)
   uint16_t off_peak_hours                     :1;       // Charge sur les heures creuses uniquement (1 : Heures creuses uniquement)
-  uint16_t tic_slaved                         :1;       // Charge asservie par les donnees TIC (1 : OUI)
   uint16_t theme                              :1;       // Thème (0 : foncé / 1 : clair)
-  uint16_t RUF                                :8;       // Réservé Usage Futures
+  uint16_t RUF                                :4;       // Réservé Usage Futures
 } VOLATILE_CONF_FIELDS_t;
 
 //< Structure des données TIC extraites au travers du Module TIC et du service WebSocket
