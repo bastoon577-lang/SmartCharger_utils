@@ -17,7 +17,7 @@ static CHARGER_t charge;
  */
 static inline void sm_charger_init_state(void) {
   charge.parameters.state   = charge_state_not_Connected;     // Positionnement de l'état en Attente de VE
-  charge.parameters.current = START_CHARGE_CURRENT;           // Positionnement du courant initial
+  charge.parameters.current = MINIMAL_CHARGE_CURRENT;         // Positionnement du courant initial
 }
 
 /**
@@ -365,7 +365,7 @@ void sm_charger_handler(void) {
   	  previous_evse_state = current_evse_state;
   	  switch(current_evse_state) {
   	    case evse_Connected:
-  	  	  charge.parameters.current = START_CHARGE_CURRENT;
+  	  	  charge.parameters.current = MINIMAL_CHARGE_CURRENT;
   	  	  charge.parameters.state = charge_state_connected;
   	  	  charge.is_charge_active = 0;
   	  	  break;
@@ -375,13 +375,13 @@ void sm_charger_handler(void) {
   	  	  try_connexions = 0;
   	  	  break;
   	    case evse_Fault:
-  	  	  charge.parameters.current = START_CHARGE_CURRENT;
+  	  	  charge.parameters.current = MINIMAL_CHARGE_CURRENT;
   	  	  charge.parameters.state = charge_state_default;
   	  	  charge.is_charge_active = 0;
   	  	  break;
   	    case evse_Not_Connected:
   	  	  charge.parameters.state = charge_state_not_Connected;
-  	  	  charge.parameters.current = START_CHARGE_CURRENT;
+  	  	  charge.parameters.current = MINIMAL_CHARGE_CURRENT;
   	  	  charge.is_charge_active = 0;
   	  	  break;
 		case evse_Com_Fault:

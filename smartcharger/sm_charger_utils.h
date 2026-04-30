@@ -16,7 +16,6 @@
 
 //< Defines autres
 #define NB_LIMIT_TRY_CONNEXIONS   2         // Nombre d'essais de connexions avant passage en charge dégradée
-#define START_CHARGE_CURRENT      15        // Courant de démarrage de charge (lié au ISCOUS minimum EDF)
 
 //< Enumération des Timers de charge
 typedef enum 
