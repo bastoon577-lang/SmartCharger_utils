@@ -363,31 +363,31 @@ void sm_charger_handler(void) {
     current_evse_state = hal_evse_get_state();
     if(current_evse_state != previous_evse_state) {           // L'état de l'EVSE à changé ?
   	  previous_evse_state = current_evse_state;
+	  charge.flag_prevent_updates = 0;						  // Autorisation de mise à jour firmware par défaut
+	  charge.is_charge_active = 0;							  // Désactivation de charge par défaut
   	  switch(current_evse_state) {
   	    case evse_Connected:
   	  	  charge.parameters.current = MINIMAL_CHARGE_CURRENT;
   	  	  charge.parameters.state = charge_state_connected;
-  	  	  charge.is_charge_active = 0;
+		  charge.flag_prevent_updates = 1;					  // Désautorise la mise à jour firmware
   	  	  break;
   	    case evse_Charging:
   	  	  charge.parameters.state = charge_state_charging;
-  	  	  charge.is_charge_active = 1;
+		  charge.flag_prevent_updates = 1;					  // Désautorise la mise à jour firmware	
+  	  	  charge.is_charge_active = 1;						  // Activation de charge
   	  	  try_connexions = 0;
   	  	  break;
   	    case evse_Fault:
   	  	  charge.parameters.current = MINIMAL_CHARGE_CURRENT;
   	  	  charge.parameters.state = charge_state_default;
-  	  	  charge.is_charge_active = 0;
   	  	  break;
   	    case evse_Not_Connected:
   	  	  charge.parameters.state = charge_state_not_Connected;
   	  	  charge.parameters.current = MINIMAL_CHARGE_CURRENT;
-  	  	  charge.is_charge_active = 0;
   	  	  break;
 		case evse_Com_Fault:
         default:
           charge.parameters.state = charge_state_default_et3k;
-          charge.is_charge_active = 0;
           break;
   	  }
     }
@@ -401,8 +401,8 @@ void sm_charger_handler(void) {
 }
 
 /**
- * \fn uint8_t sm_charger_is_charge_active(void)
+ * \fn uint8_t sm_charger_prevent_updates(void)
  */
-uint8_t sm_charger_is_charge_active(void) {
-	return charge.is_charge_active;
+uint8_t sm_charger_prevent_updates(void) {
+	return charge.flag_prevent_updates;
 }

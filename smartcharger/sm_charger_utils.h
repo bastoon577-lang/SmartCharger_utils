@@ -36,7 +36,8 @@ typedef struct
   uint8_t is_hc_active         :1;          // Bitfield d'heures creuses en cours...
   uint8_t flag_lock_evse       :1;          // Bitfield de blocage de l'EVSE
   uint8_t flag_scrut_evse      :1;          // Bitfield de lecture de l'EVSE
-  uint8_t RUF                  :3;          // Réservé Usage Futur
+  uint8_t flag_prevent_updates :1;			// Bitfield d'autorisation de mise à jour firmware
+  uint8_t RUF                  :2;          // Réservé Usage Futur
 } CHARGER_t;
 
 /**
@@ -54,11 +55,13 @@ void sm_charger_init(STATIC_CONF_FIELDS_t *static_conf, VOLATILE_CONF_FIELDS_t *
 void sm_charger_handler(void);
 
 /**
- * \fn uint8_t sm_charger_is_charge_active(void)
- * \brief Getter sur l'état de charge du VE:
- *			- 1 charge en cours
- *			- 0 pas de charge en cours
+ * \fn uint8_t sm_charger_prevent_updates(void)
+ * \brief Getter d'interdiction de mise à jour firmware.
+ *		  Les mises à jours firmware ne sont autorisées que lorsqu'aucun VE n'est 
+ *		  connecté ou en charge.
+ *			- 1 Mise à jour non autorisée
+ *			- 0 Mise à jour autorisée
  */
-uint8_t sm_charger_is_charge_active(void);
+uint8_t sm_charger_prevent_updates(void);
 
 #endif
