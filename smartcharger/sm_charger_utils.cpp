@@ -399,3 +399,10 @@ void sm_charger_handler(void) {
     ws_server_send_broadcast(); 
   }
 }
+
+/**
+ * \fn uint8_t sm_charger_is_charge_active(void)
+ */
+uint8_t sm_charger_is_charge_active(void) {
+	return charge.is_charge_active;
+}
