@@ -53,4 +53,12 @@ void sm_charger_init(STATIC_CONF_FIELDS_t *static_conf, VOLATILE_CONF_FIELDS_t *
  */
 void sm_charger_handler(void);
 
+/**
+ * \fn uint8_t sm_charger_is_charge_active(void)
+ * \brief Getter sur l'état de charge du VE:
+ *			- 1 charge en cours
+ *			- 0 pas de charge en cours
+ */
+uint8_t sm_charger_is_charge_active(void);
+
 #endif
