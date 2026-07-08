@@ -331,17 +331,6 @@ void sm_charger_handler(void) {
     sm_charger_charge_with_tic_module(&try_connexions);       // Utilisation du mécanisme de charge avec le Module TIC
 
   /*************************************************************************************************************
-   *        Etage de contrôle EVSE et d'update WS (périod***********************************************************************
-   *        Etage de contrôle du SmartCharger; cet étage permet le gestion intelligente du
-   *        mécanisme de recharge VE avec ou sans Module TIC.
-   ************************************************************************************************************/
-  charge.flag_scrut_evse = 1;                                 // Autorisation de lecture de l'EVSE qui sera désautorisé si nécessaire
-  if(!charge.static_conf->is_tic_module_used)                 // Le Module TIC n'est pas configuré ?
-    sm_charger_charge_without_tic_module();                   // Utilisation du mécanisme de charge sans le Module TIC
-  else                                                        // Autrement
-    sm_charger_charge_with_tic_module(&try_connexions);       // Utilisation du mécanisme de charge avec le Module TIC
-
-  /*************************************************************************************************************
    *        Etage de contrôle EVSE et d'update WS (période 1s) :
    *			- Lecture de l'état de l'EVSE (si autorisé),
    *			- Pilotage de l'EVSE :
