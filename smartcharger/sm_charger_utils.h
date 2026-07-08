@@ -4,8 +4,7 @@
 #include "common_utils.h"
 
 //< Defines des TIMEOUT
-#define TIMEOUT_SCRUT_WS_TIC_LONG 30000     // Temps de scrutation long de l'état de connexion WS Module TIC
-#define TIMEOUT_SCRUT_WS_TIC_FAST 6000      // Temps de scrutation rapide de l'état de connexion WS Module TIC
+#define TIMEOUT_SCRUT_WS_TIC      12000     // Temps de scrutation de l'état de connexion WS Module TIC
 #define TIMEOUT_LAST_IVE_INCREASE 6000      // Temps de la dernière augmentation de courant de charge
 #define TIMEOUT_LAST_IVE_DECREASE 2000      // Temps de la dernière diminution de courant de charge
 #define TIMEOUT_SCRUT_EVSE        1000      // Temps de scrutation de l'état de l'EVSE
@@ -13,9 +12,6 @@
 //< Defines décisionels de puissance
 #define BIG_GAP_GRID_CURRENT      4         // Le GAP est important (aussi bien en surcharge qu'en sous-charge)
 #define NULL_GAP_GRID_CURRENT     0         // Le GAP est très faible (proche de zéro)
-
-//< Defines autres
-#define NB_LIMIT_TRY_CONNEXIONS   2         // Nombre d'essais de connexions avant passage en charge dégradée
 
 //< Enumération des Timers de charge
 typedef enum 

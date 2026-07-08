@@ -15,11 +15,27 @@
  *    - La WS Client est facultatif (dépendant de la configuration de l'équippement)
  */
 
-#define TIMEOUT_DATA_RECV     15000
+/*
+ * Déclaration des Timeouts liés à l'état connecté.
+ * 
+ * Néanmoins, le Module TIC peut parfois resté muet (aucun changement de donnée) du fait d'une consommation proche de 0 !
+ *
+ * Le Module TIC intègre un mode écho, qui renvois le message émit au client et permet une réinitialisation naturelle du timer
+ * La stratégie consiste à :
+ *		- Si aucune donnée n'a été reçu depuis TIMEOUT_ALIVE
+ *			- Si le dernier ping envoyé date d'après TIMEOUT_PING
+ *				--> Emettre un Ping (écho)
+ *		- Si aucune donnée n'a été reçu depuis TIMEOUT_DATA_RECV
+ *			--> Effectuer une déconnexion
+ */
+#define TIMEOUT_DATA_RECV     8000
+#define TIMEOUT_PING		  1000
+#define TIMEOUT_ALIVE		  5000
  
 //< Enumération des Timers WebSockets Client
 enum {
   ws_client_data_received,
+  ws_client_last_ping,
   ws_client_nb_timers
 };
 
