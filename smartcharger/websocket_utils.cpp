@@ -107,7 +107,7 @@ static void ws_server_on_event(uint8_t num, WStype_t type, uint8_t* payload, siz
  * \fn void ws_client_handler(void)
  * \brief Handler de WS Client à appeler régulièrement
  *        Cette procédure permet une connexion WebSocket client 
- *        propre et assynchrone avec le Module TIC       
+ *        propre et assynchrone avec le Module TIC
  */
 static void ws_client_handler(void) {
   switch(ws.client_state)
@@ -128,8 +128,21 @@ static void ws_client_handler(void) {
       ws.timers_client[ws_client_data_received] = millis();           // Armement du timer de réception de données
       // Pas de BREAK, c'est normal car il est nécessaire d'exécuter le loop() !
     case ws_client_connected:
-      if(millis() - ws.timers_client[ws_client_data_received] >= TIMEOUT_DATA_RECV) // Le Timer de dernière données reçue est échue ?
-        ws.client_state = ws_client_disconnect;                       // Déconnexion immédiate
+	  // Le flux de données provenant du ModuleTIC s'est arrêté depuis plus de TIMEOUT_ALIVE
+      if(millis() - ws.timers_client[ws_client_data_received] >= TIMEOUT_ALIVE)
+	  {
+		// Le dernier ping date d'avant TIMEOUT_PING
+	    if(millis() - ws.timers_client[ws_client_last_ping] >= TIMEOUT_PING)
+		{
+		  ws.timers_client[ws_client_last_ping] = millis();			  // Réinitialisation du timer de ping
+		  ws_client_socket.sendTXT("KeepAlive");					  // Emission d'un ping
+		}
+	  }
+	  // Toujours aucun flux de données provenant du ModuleTIC malgré les pings !
+	  if(millis() - ws.timers_client[ws_client_data_received] >= TIMEOUT_DATA_RECV)
+      {
+        ws.client_state = ws_client_disconnect;						  // Déconnexion immédiate
+	  }
       ws_client_socket.loop();                                        // Handler du service WebSocket Client
       break;
       
