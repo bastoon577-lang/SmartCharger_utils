@@ -99,6 +99,9 @@ static inline void sm_charger_waiting_before_decrease(uint8_t decrease_value) {
 static void sm_charger_adjust_current(int8_t available_current) {
   if(!ws_client_is_connected())
     return;
+
+  if(!charge.is_charge_active)
+	return;
     
   if(available_current < -(BIG_GAP_GRID_CURRENT)) {           // Une surcharge du réseau trop importante est constatée !
     charge.parameters.current = MINIMAL_CHARGE_CURRENT;       // Diminution drastique du courant de charge
