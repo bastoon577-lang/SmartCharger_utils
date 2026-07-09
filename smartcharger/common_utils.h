@@ -6,7 +6,7 @@
 #include "../../hal_utils.h"
 
 //< MACRO de version logicielle
-#define V_LOGICIEL                "v1.01"               // Version Logicielle
+#define V_LOGICIEL                "v1.02"               // Version Logicielle
 
 //< MACRO du Mode Access Point
 #define AP_SSID                   "SmartCharger"        // SSID SmartCharger Access Point
