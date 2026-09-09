@@ -1,6 +1,6 @@
 #include "sm_charger_utils.h"
 #include "websocket_utils.h"
-#include "common_utils.h"
+#include "common_sm.h"
 
 //< Déclaration des variables globales
 static TIC_DATA_t tic_data;
