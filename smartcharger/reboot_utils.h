@@ -1,7 +1,7 @@
 #ifndef __REBOOT_UTILS__
 #define __REBOOT_UTILS__
 
-#include "common_utils.h"
+#include "common_sm.h"
 
 //< Enumération des Timers REBOOT
 enum {

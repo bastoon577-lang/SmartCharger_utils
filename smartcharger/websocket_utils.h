@@ -1,7 +1,7 @@
 #ifndef __WEBSOCKET_UTILS__
 #define __WEBSOCKET_UTILS__
 
-#include "common_utils.h"
+#include "common_sm.h"
 
 /*
  * Le module WebSocket permet l'échange de données en mode évênementiel des différentes

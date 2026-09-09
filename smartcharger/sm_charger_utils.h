@@ -1,7 +1,7 @@
 #ifndef __SMART_CHARGER_UTILS__
 #define __SMART_CHARGER_UTILS__
 
-#include "common_utils.h"
+#include "common_sm.h"
 
 //< Defines des TIMEOUT
 #define TIMEOUT_SCRUT_WS_TIC      12000     // Temps de scrutation de l'état de connexion WS Module TIC

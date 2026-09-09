@@ -1,7 +1,7 @@
 #ifndef __EEPROM_UTILS__
 #define __EEPROM_UTILS__
 
-#include "common_utils.h"
+#include "common_sm.h"
 
 #define EEPROM_START        0
 #define EEPROM_SIZE         512
