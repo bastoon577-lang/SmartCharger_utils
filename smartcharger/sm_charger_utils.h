@@ -27,13 +27,14 @@ typedef struct
   VOLATILE_CONF_FIELDS_t *volatile_conf;    // Pointeur sur les données VOLATILE_CONF_FIELDS_t
   STATIC_CONF_FIELDS_t *static_conf;        // Pointeur vers la structure STATIC_CONF_FIELDS_t
   CHARGE_PARAMETERS_t parameters;           // Paramètres de charge VE
-  uint8_t is_charge_active     :1;          // Bitfield de Charge en cours
-  uint8_t is_limited_charge    :1;          // Bitfield de Charge dégradée suite à la perte de connexion au Module TIC
-  uint8_t is_hc_active         :1;          // Bitfield d'heures creuses en cours...
-  uint8_t flag_lock_evse       :1;          // Bitfield de blocage de l'EVSE
-  uint8_t flag_scrut_evse      :1;          // Bitfield de lecture de l'EVSE
-  uint8_t flag_prevent_updates :1;			// Bitfield d'autorisation de mise à jour firmware
-  uint8_t RUF                  :2;          // Réservé Usage Futur
+  uint8_t counter_starting_charge;			// Compteur de début de charge
+  uint8_t is_charge_active     	: 1;        // Bitfield de Charge en cours
+  uint8_t is_limited_charge    	: 1;        // Bitfield de Charge dégradée suite à la perte de connexion au Module TIC
+  uint8_t is_hc_active         	: 1;        // Bitfield d'heures creuses en cours...
+  uint8_t flag_lock_evse       	: 1;        // Bitfield de blocage de l'EVSE
+  uint8_t flag_scrut_evse      	: 1;        // Bitfield de lecture de l'EVSE
+  uint8_t flag_prevent_updates 	: 1;		// Bitfield d'autorisation de mise à jour firmware
+  uint8_t RUF 					: 2;		// Réservé Usage Future
 } CHARGER_t;
 
 /**

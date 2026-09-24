@@ -21,14 +21,29 @@ static inline void sm_charger_init_state(void) {
 }
 
 /**
- * \fn void void sm_charger_adopt_limit_current(void)
- * \brief Fonction permettant d'adopter le courant limite
+ * \fn void void sm_charger_read_limit_current(void)
+ * \brief Fonction permettant de lire le courant limite
+ * \return Le courant limite lut dans l'Eeprom
  */
-static inline void sm_charger_adopt_limit_current(void) {
-  hal_disable_interrupt();
-  charge.parameters.current =
-      READ_OFFSET_5B(charge.volatile_conf->limite_current);   // Adoption du courant limite
-  hal_enable_interrupt();
+static inline uint8_t sm_charger_read_limit_current(void) {
+  uint8_t current;
+  hal_disable_interrupt();                                    // Arrêt des interruptions
+  current = READ_OFFSET_5B(charge.volatile_conf->limite_current);
+  hal_enable_interrupt();                                     // Reprise des interruptions
+  return current;
+}
+
+/**
+ * \fn void void sm_charger_read_degraded_current(void)
+ * \brief Fonction permettant de lire le courant dégradé
+ * \return Le courant dégradé lut dans l'Eeprom
+ */
+static inline uint8_t sm_charger_read_degraded_current(void) {
+  uint8_t current;
+  hal_disable_interrupt();                                    // Arrêt des interruptions
+  current = READ_OFFSET_5B(charge.volatile_conf->degraded_current);
+  hal_enable_interrupt();                                     // Reprise des interruptions
+  return current;
 }
 
 /**
@@ -39,17 +54,16 @@ static inline void sm_charger_adopt_limit_current(void) {
  *    Le courant disponible en Ampères
  */
 static int8_t sm_charger_compute_available_current(void) {
-  enum {phase_1,phase_2,phase_3,nb_phases};
+
+  enum {phase_1, phase_2, phase_3, nb_phases};
   int8_t available_current[nb_phases] = {0};
   int8_t ret;
   
   if(!charge.static_conf->which_voltage) {                    // Le réseau est de type Monophasé
-    ret = tic_data.isousc - tic_data.iinst;                   // Calcul par l'utilisation de IINST uniquement
+    ret = tic_data.i_max - tic_data.i_inst[phase_1];
   } else {                                                    // Autrement, le réseau est de type Triphasé
-    // Calculs des courants disponibles sur chaque phases
-    available_current[phase_1] = tic_data.isousc - tic_data.iinst_1;
-    available_current[phase_2] = tic_data.isousc - tic_data.iinst_2;
-    available_current[phase_3] = tic_data.isousc - tic_data.iinst_3;
+    for(uint8_t p=0;p<nb_phases;p++)                          // Calculs des courants disponibles sur chaque phases
+      available_current[p] = tic_data.i_max - tic_data.i_inst[p];
     
     /// Recherche du courant minimum disponible sur le réseau
     ret = available_current[phase_1];
@@ -101,7 +115,7 @@ static void sm_charger_adjust_current(int8_t available_current) {
     return;
 
   if(!charge.is_charge_active)
-	return;
+    return;
     
   if(available_current < -(BIG_GAP_GRID_CURRENT)) {           // Une surcharge du réseau trop importante est constatée !
     charge.parameters.current = MINIMAL_CHARGE_CURRENT;       // Diminution drastique du courant de charge
@@ -109,10 +123,11 @@ static void sm_charger_adjust_current(int8_t available_current) {
     if(charge.parameters.current > MINIMAL_CHARGE_CURRENT)    // Le courant de charge peut-il être diminué ?
       sm_charger_waiting_before_decrease(1);                  // Diminution de 1A du courant de charge
     else {
-      /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+      /////////////////////////////////////////////////////////////////////////////////////////////////////////
       // AUTREMENT, il est nécessaire de couper la charge !!!
       // Continuer d'observer les données TIC en attente que courant disponible soit > 6 pour repasser en charge !
-      /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+      // NON IMPLEMENTEE POUR LE MOMENT !!!
+      /////////////////////////////////////////////////////////////////////////////////////////////////////////
     }
   } else if (available_current == NULL_GAP_GRID_CURRENT) {    // La puissance maximale est atteinte
     // NE RIEN FAIRE, LA TANGENTE SUR LA PUISSANCE MAXIMALE DU COMPTEUR EST ATTEINTE !
@@ -125,13 +140,13 @@ static void sm_charger_adjust_current(int8_t available_current) {
   }
   
   // Néanmoins, il ne faut pas dépasser la limite imposée !
-  if(charge.parameters.current > READ_OFFSET_5B(charge.volatile_conf->limite_current))
-    sm_charger_adopt_limit_current();
+  if(charge.parameters.current > sm_charger_read_limit_current())
+    charge.parameters.current = sm_charger_read_limit_current();
   
   // Mais, il est important de ne pas excéder la puissance maximale du réseau !
-  if(charge.parameters.current > tic_data.isousc) {
-    if(tic_data.isousc)                                       // Uniquement s'il possède une valeur (Ne peut être égal à 0) !
-      charge.parameters.current = tic_data.isousc;
+  if(charge.parameters.current > tic_data.i_max) {
+    if(tic_data.i_max)                              // Uniquement s'il possède une valeur (Ne peut être égal à 0) !
+      charge.parameters.current = tic_data.i_max;
   }
   // Mais aussi, ne pas excéder la puissance maximale admissible par le VE !
   if(charge.parameters.current > MAXIMAL_CHARGE_CURRENT)
@@ -143,61 +158,52 @@ static void sm_charger_adjust_current(int8_t available_current) {
  * \brief Fonction permettant la gestion de connexion de la WS au Module TIC
  */
 static void sm_charger_manage_tic_connection(void) {
+  static bool prev_need_connection = false;
+  
   bool need_connection =                                      // La connexion WS Module TIC est nécessaire lorsque :
     charge.volatile_conf->off_peak_hours ||                   // L'option d'heure creuse uniquement est active
     charge.is_charge_active;                                  // La charge est en cours...
   
-  if(!need_connection) {                                      // Aucune connexion n'est nécessaire
-    if(ws_client_is_connected()) {
-      ws_client_disconnect_from_tic_module();                 // Demande de déconnexion propre à la machine à états de la socket
+  // Détection de changement d'état (front) pour éviter la réinstanciation en boucle de la connexion
+  if(need_connection != prev_need_connection) {
+    prev_need_connection = need_connection;
+    
+    if (need_connection) {
+      ws_client_connect_on_tic_module(&tic_data);             // Demande de connexion
+      charge.flag_scrut_evse = 0;                             // Lecture de l'EVSE non autorisée tant qu'on cherche la synchro TIC
+    } else {
+      if (ws_client_is_connected()) {
+        ws_client_disconnect_from_tic_module();               // Demande de déconnexion propre à la machine à états de la socket
+      }
     }
-    return;                                                   // Echappement
   }
-  
-  // Si on a besoin de la connexion et qu'on n'est pas connecté
-  if(!ws_client_is_connected()) {
-    ws_client_connect_on_tic_module(&tic_data);               // Demande de connexion
-    charge.flag_scrut_evse = 0;                               // Lecture de l'EVSE non autorisée tant qu'on cherche la synchro TIC
-  }
-}
-
-/**
- * \fn void sm_charger_update_hc_state(void)
- * \brief Fonction permettant la gestion de charge en Heures Creuses
- *        au travers de la connexion WS au Module TIC
- */
-static void sm_charger_update_hc_state(void) { 
-  if(!charge.volatile_conf->off_peak_hours) {               // Aucune configuration de charge en heure creuse effective ?
-    charge.is_hc_active = 0;                                // Réinitialisation du flag (Ce cas ne doit pas arriver)
-    return;                                                 // Echappement
-  }
-
-  if(!ws_client_is_connected())                             // Pas de connexion effective
-    return;                                                 // Echappement
-  
-  if(!memcmp(tic_data.ptec,"HC..",4))                       // Heures creuses en cours...
-    charge.is_hc_active = 1;                                // La charge est autorisée
-  
-  if(!memcmp(tic_data.ptec,"HP..",4))                       // Heures pleines en cours...
-    charge.is_hc_active = 0;                                // La charge n'est pas autorisée
 }
 
 /**
  * \fn void sm_charger_manage_degraded_mode(void)
  * \brief Fonction permettant la gestion du mode dégradé lors de la perte de connexion 
- *        avec le Module TIC sur le réseau
+ *        avec le Module TIC sur le réseau.
  */
 static void sm_charger_manage_degraded_mode(void) {
+
   if(!charge.is_charge_active)
     return;
-    
-  // Si le chargeur est actif mais que la socket signale une perte de connexion
-  if(!ws_client_is_connected()) {
+
+  if(charge.counter_starting_charge == 1 &&					  // Avant dernier incrément de counter_starting_charge
+     !ws_client_is_connected()) {			                  // Le client n'est toujours pas connecté  
+    charge.parameters.current =                               // Adoption du courant limite configuré
+           sm_charger_read_degraded_current();
     charge.parameters.state = charge_state_charging_degraded;
     charge.is_limited_charge = 1;
-  } 
-  // Dès que la connexion est confirmée par le système de socket
-  else if(charge.is_limited_charge && ws_client_is_connected()) {
+  }
+  else if (charge.counter_starting_charge > 1)                // Le compteur est encore trop élevé
+    return;                                                   // Echappement immédiat
+    
+  if(!ws_client_is_connected()) {                             // La socket signale une perte de connexion
+    charge.parameters.state = charge_state_charging_degraded;
+    charge.is_limited_charge = 1;
+  } else if(charge.is_limited_charge &&                       // Le mode dégradé est actif
+            ws_client_is_connected()) {                       // La connexion est de nouveau effective
     charge.parameters.state = charge_state_charging;
     charge.is_limited_charge = 0;
   }
@@ -205,10 +211,38 @@ static void sm_charger_manage_degraded_mode(void) {
   if(!charge.is_limited_charge)
     return;
 
-  uint8_t limit = READ_OFFSET_5B(charge.volatile_conf->degraded_current);
-  if(charge.parameters.current > limit)                                     
+  uint8_t limit = sm_charger_read_degraded_current();
+  if(charge.parameters.current > limit)                   
     charge.parameters.current = limit;                        // Adoption du courant limite configuré
   // Autrement le courant reste inchangé (déjà limité par l'asservissement précédent !)
+}
+
+/**
+ * \fn void sm_charger_update_hc_state(void)
+ * \brief Fonction permettant la gestion de charge en Heures Creuses
+ *        au travers de la connexion WS au Module TIC
+ */
+static void sm_charger_update_hc_state(void) {
+    
+  if(!ws_client_is_connected())                               // Pas de connexion effective
+    return;                                                   // Echappement
+
+  if(!charge.volatile_conf->off_peak_hours) {                 // Aucune configuration de charge en heure creuse effective ?
+    charge.is_hc_active = 0;                                  // Réinitialisation du flag (Ce cas ne doit pas arriver)
+    return;                                                   // Echappement
+  }
+    
+  /* Il est nécessaire de prendre tous les cas possible d'heures creuses :
+   *    - Mode Standard peut être : 'HEURE CREUSE' , 'HC BLEU' , 'HC BLANC' , 'HC ROUGE'.
+   *    - Mode Historique peut être : 'HC..' , 'HCJB' , 'HCJW' , 'HCJR'.
+   * La stratégie est d'utiliser le début de chaine 'HC' dans les 2 modes, et de prendre la chaine 
+   * complète sur le mode standard.
+   */
+  if(!memcmp(tic_data.tarif,"HEURE CREUSE",12) ||
+     !memcmp(tic_data.tarif,"HC",2))
+    charge.is_hc_active = 1;                                  // La charge est autorisée
+  else                                                        // Autrement, les heures pleines sont en cours ...
+    charge.is_hc_active = 0;                                  // La charge n'est pas autorisée
 }
 
 /**
@@ -217,7 +251,7 @@ static void sm_charger_manage_degraded_mode(void) {
  */
 static void sm_charger_process_tic_data(void) {
   
-  sm_charger_update_hc_state();                               // Vérification des HP/HC
+  sm_charger_update_hc_state();                               // Vérification des données TIC
 
   int8_t available_current = 
     sm_charger_compute_available_current();                   // Calcul du courant disponible sur le réseau électrique
@@ -231,13 +265,9 @@ static void sm_charger_process_tic_data(void) {
  *        de la puissance instantanée du réseau électrique.
  */
 static void sm_charger_charge_with_tic_module(void) {
-  static unsigned long timer_scrut_ws_connexion = millis();
 
-  // Gestion de la demande de connexion/déconnexion avec le Module TIC
-  if(millis() - timer_scrut_ws_connexion >= TIMEOUT_SCRUT_WS_TIC) {
-    sm_charger_manage_tic_connection();
-    timer_scrut_ws_connexion = millis();
-  }
+  // Gestion non-bloquante de la demande de connexion/déconnexion avec le Module TIC
+  sm_charger_manage_tic_connection();
 
   sm_charger_process_tic_data();                              // Gestion du processus de charge avec les données TIC
 
@@ -274,7 +304,7 @@ static void sm_charger_charge_with_tic_module(void) {
  *        La puissance de charge est donc statique et déterminée par l'utilisateur.
  */
 static void sm_charger_charge_without_tic_module(void) {
-  sm_charger_adopt_limit_current();                           // Adoption du courant limite
+  charge.parameters.current = sm_charger_read_limit_current();// Adoption du courant limite
 }
 
 /*
@@ -298,7 +328,7 @@ void sm_charger_init(STATIC_CONF_FIELDS_t *static_conf, VOLATILE_CONF_FIELDS_t *
  * \fn void sm_charger_handler(void)
  */
 void sm_charger_handler(void) {
-  static CHARGE_STATE_EVSE_e previous_evse_state, current_evse_state;
+  static CHARGE_STATE_EVSE_e previous_evse_state = evse_Not_Connected;
   static CHARGE_PARAMETERS_t previous_charge_parameters;
   static unsigned long timer_scrut_evse = millis();
 
@@ -310,56 +340,55 @@ void sm_charger_handler(void) {
   if(!charge.static_conf->is_tic_module_used)                 // Le Module TIC n'est pas configuré ?
     sm_charger_charge_without_tic_module();                   // Utilisation du mécanisme de charge sans le Module TIC
   else                                                        // Autrement
-    sm_charger_charge_with_tic_module();    			      // Utilisation du mécanisme de charge avec le Module TIC
+    sm_charger_charge_with_tic_module();                      // Utilisation du mécanisme de charge avec le Module TIC
 
   /*************************************************************************************************************
-   *        Etage de contrôle EVSE et d'update WS (période 1s) :
-   *			- Lecture de l'état de l'EVSE (si autorisé),
-   *			- Pilotage de l'EVSE :
-   *				- Attribution de 0A pour le blocage de l'EVSE
-   *				- Attribution du courant désiré autrement
-   *			- Mise à jour de l'IHM par WS
+   *        Etage de contrôle EVSE et d'update WS (période 1s).
    ************************************************************************************************************/
   hal_evse_update_input();                                    // Scrutation de l'EVSE (Mode Polling)
   
-  if(millis() - timer_scrut_evse < TIMEOUT_SCRUT_EVSE) 		  // Le timer est en cours...
-    return;													  // Echappement immédiat
-  timer_scrut_evse = millis();								  // Réarmement du timer
+  if(millis() - timer_scrut_evse < TIMEOUT_SCRUT_EVSE)        // Le timer est en cours...
+    return;                                                   // Echappement immédiat
+  timer_scrut_evse = millis();                                // Réarmement du timer
+  
+  if(charge.counter_starting_charge)                          // Le compteur est décrémentable
+    charge.counter_starting_charge--;                         // On décrémente (tendre à 0)
   
   // Communication avec l'EVSE (Courant de consigne et/ou blocage)
   hal_evse_update_output((charge.flag_lock_evse)?0:charge.parameters.current); 
   
   // Lecture de l'état de charge VE par l'EVSE
   if(charge.flag_scrut_evse) {                                // La lecture de l'état de l'EVSE est autorisée
-    current_evse_state = hal_evse_get_state();
+    CHARGE_STATE_EVSE_e current_evse_state = hal_evse_get_state();
     if(current_evse_state != previous_evse_state) {           // L'état de l'EVSE à changé ?
-  	  previous_evse_state = current_evse_state;
-	  charge.flag_prevent_updates = 0;						  // Autorisation de mise à jour firmware par défaut
-	  charge.is_charge_active = 0;							  // Désactivation de charge par défaut
-  	  switch(current_evse_state) {
-  	    case evse_Connected:
-  	  	  charge.parameters.current = MINIMAL_CHARGE_CURRENT;
-  	  	  charge.parameters.state = charge_state_connected;
-		  charge.flag_prevent_updates = 1;					  // Désautorise la mise à jour firmware
-  	  	  break;
-  	    case evse_Charging:
-  	  	  charge.parameters.state = charge_state_charging;
-		  charge.flag_prevent_updates = 1;					  // Désautorise la mise à jour firmware	
-  	  	  charge.is_charge_active = 1;						  // Activation de charge
-  	  	  break;
-  	    case evse_Fault:
-  	  	  charge.parameters.current = MINIMAL_CHARGE_CURRENT;
-  	  	  charge.parameters.state = charge_state_default;
-  	  	  break;
-  	    case evse_Not_Connected:
-  	  	  charge.parameters.state = charge_state_not_Connected;
-  	  	  charge.parameters.current = MINIMAL_CHARGE_CURRENT;
-  	  	  break;
-		case evse_Com_Fault:
+      previous_evse_state = current_evse_state;
+      charge.flag_prevent_updates = 0;                        // Autorisation de mise à jour firmware par défaut
+      charge.is_charge_active = 0;                            // Désactivation de charge par défaut
+      switch(current_evse_state) {
+        case evse_Connected:
+          charge.parameters.current = MINIMAL_CHARGE_CURRENT;
+          charge.parameters.state = charge_state_connected;
+          charge.flag_prevent_updates = 1;                    // Désautorise la mise à jour firmware
+          break;
+        case evse_Charging:
+          charge.parameters.state = charge_state_charging;
+          charge.counter_starting_charge = 10;                // Initialisation du compteur de début de charge
+          charge.flag_prevent_updates = 1;                    // Désautorise la mise à jour firmware    
+          charge.is_charge_active = 1;                        // Activation de charge
+          break;
+        case evse_Fault:
+          charge.parameters.current = MINIMAL_CHARGE_CURRENT;
+          charge.parameters.state = charge_state_default;
+          break;
+        case evse_Not_Connected:
+          charge.parameters.state = charge_state_not_Connected;
+          charge.parameters.current = MINIMAL_CHARGE_CURRENT;
+          break;
+        case evse_Com_Fault:
         default:
           charge.parameters.state = charge_state_default_et3k;
           break;
-  	  }
+      }
     }
   }
 
@@ -374,5 +403,5 @@ void sm_charger_handler(void) {
  * \fn uint8_t sm_charger_prevent_updates(void)
  */
 uint8_t sm_charger_prevent_updates(void) {
-	return charge.flag_prevent_updates;
+    return charge.flag_prevent_updates;
 }
