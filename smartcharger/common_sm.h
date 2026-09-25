@@ -6,7 +6,7 @@
 #include "../../hal_utils.h"
 
 //< MACRO de version logicielle SmartCharger_utils
-#define V_SM_LOGICIEL             "v1.0.3"              // Version Logicielle
+#define V_SM_LOGICIEL             "v1.0.4"              // Version Logicielle
 
 //< Define de gestion d'intensite sur 5 bits (optimisation spatiale de l'intensité en mémoire EEPROM)
 #define READ_OFFSET_5B(x)         (x+6)
@@ -42,21 +42,20 @@ typedef struct
 {
   uint16_t degraded_current                   :5;       // Intensite dégradée en perte de communication TIC (WARNING : I = intensity + 6)
   uint16_t limite_current                     :5;       // Intensite de charge limite (WARNING : I = intensity + 6)
-  uint16_t off_peak_hours                     :1;       // Charge sur les heures creuses uniquement (1 : Heures creuses uniquement)
+  uint16_t off_super_peak_hours               :1;       // Charge sur les heures super creuses uniquement (1 : Heures super creuses)
+  uint16_t off_peak_hours                     :1;       // Charge sur les heures creuses uniquement (1 : Heures creuses)
+  uint16_t solar_active						  :1;		// Charge privilégiant l'énergie solaire
   uint16_t theme                              :1;       // Thème (0 : foncé / 1 : clair)
-  uint16_t RUF                                :4;       // Réservé Usage Futures
+  uint16_t RUF                                :2;       // Réservé Usage Futures
 } VOLATILE_CONF_FIELDS_t;
 
-//< Structure des données TIC extraites au travers du Module TIC et du service WebSocket
+//< Structure de données TIC extraites au travers du Module TIC et du service WebSocket
 typedef struct
 {
-  uint8_t isousc;                                       // Intensite maximale (A ne pas depasser !)
-  uint8_t iinst;                                        // Intensite absorbé (Monophasé)
-  uint8_t iinst_1;                                      // Intensite phase 1 absorée (Triphasé)
-  uint8_t iinst_2;                                      // Intensite phase 2 absorée (Triphasé)
-  uint8_t iinst_3;                                      // Intensite phase 3 absorée (Triphasé)
-  uint16_t papp;                                        // Puissance apparente absorbée
-  char ptec[5];                                         // Tarif actuel (HC.. ou HP..)
+  uint16_t p_injectee;									// Puissance injectée sur le réseau
+  uint8_t i_inst[3];									// Intensite phase(s) absorée(s) (Monophasé & Triphasé)
+  char tarif[19];										// Tarif actuel appliqué (Heures Creuses/Pleines)
+  uint8_t i_max;										// Intensite max pouvant être absorbé avant disjonction
 } TIC_DATA_t;
 
 //< Enumération des états du SmartCharger

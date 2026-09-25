@@ -28,9 +28,11 @@
  *		- Si aucune donnée n'a été reçu depuis TIMEOUT_DATA_RECV
  *			--> Effectuer une déconnexion
  */
-#define TIMEOUT_DATA_RECV     8000
-#define TIMEOUT_PING		  1000
-#define TIMEOUT_ALIVE		  5000
+#define TIMEOUT_DATA_RECV     	8000
+#define TIMEOUT_PING		  	1000
+#define TIMEOUT_ALIVE		  	5000
+#define TIMEOUT_CONNECTING    	5000
+#define TIMEOUT_RECONNECT_RETRY 5000
  
 //< Enumération des Timers WebSockets Client
 enum {
@@ -40,23 +42,25 @@ enum {
 };
 
 //< Enumération des états de la WebSockets Client
-enum {
+typedef enum {
   ws_client_idle,
   ws_client_connect,
   ws_client_connecting,
   ws_client_connected,
   ws_client_disconnect
-};
+} WS_CLIENT_STATE_e;
 
 //< Structure des données WebSocket
 typedef struct {
-  unsigned long timers_client[ws_client_nb_timers];
-  CHARGE_PARAMETERS_t *charge_parameters;
-  bool is_client_connected;
-  TIC_CONF_FIELDS_t *tic;
-  bool is_client_active;
-  uint8_t client_state;
-  TIC_DATA_t *tic_data;
+  unsigned long timers_client[ws_client_nb_timers];			// Timers de fonctionnement internes
+  CHARGE_PARAMETERS_t *charge_parameters;					// Pointeur vers les paramètres de charge VE
+  STATIC_CONF_FIELDS_t *static_conf;        				// Pointeur vers la structure STATIC_CONF_FIELDS_t
+  WS_CLIENT_STATE_e client_state;							// Etat de connexion de la WS client
+  TIC_CONF_FIELDS_t *tic;									// Pointeur vers les paramètres de configuration TIC
+  TIC_DATA_t *tic_data;										// Pointeur vers la structure TIC_DATA
+  uint8_t is_client_active			: 1;					// Bitfield de client actif
+  uint8_t is_client_socket_active	: 1;					// Bitfield de demande de connexion client
+  uint8_t RUF						: 6;					// Réservé usage future
 } WS_t;
 
 /**
@@ -77,8 +81,9 @@ void ws_server_init(uint16_t port);
  *        Facultatif en fonction de la configuation de l'utilisateur
  * 
  * \param in, le pointeur vers la structure de configuration TIC
+ * \param in, le pointeur vers la structure de configuration SmartCharger
  */
-void ws_client_init(TIC_CONF_FIELDS_t *tic_conf);
+void ws_client_init(TIC_CONF_FIELDS_t *tic_conf, STATIC_CONF_FIELDS_t *static_conf);
 
 /**
  * \fn void ws_client_connect_on_tic_module(void)
