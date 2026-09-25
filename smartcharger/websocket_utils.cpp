@@ -53,7 +53,7 @@ static void ws_client_tic_parser(uint8_t *payload) {
     if(sscanf(str, "{\"SINSTI\":\"%5[^\"]\"}",value) == 1)
       ws.tic_data->p_injectee = (uint16_t)atoi(value);
   }else if(strstr(str,"\"LTARF\"")) {
-    if(sscanf(str, "{\"LTARF\":\"%16[^\"]\"}",value) == 1)
+    if(sscanf(str, "{\"LTARF\":\"%18[^\"]\"}",value) == 1)
       strcpy(ws.tic_data->tarif, value);
   }else if(strstr(str,"\"PCOUP\"")) {
     if(sscanf(str, "{\"PCOUP\":\"%2[^\"]\"}",value) == 1) {

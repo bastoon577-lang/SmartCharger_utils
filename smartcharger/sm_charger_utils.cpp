@@ -59,6 +59,14 @@ static int8_t sm_charger_compute_available_current(void) {
   int8_t available_current[nb_phases] = {0};
   int8_t ret;
   
+  /* L'option de privilège solaire est active
+   * Si aucune absorption n'est constaté sur la Phase 1, on retourne le courant injecté (P_Injecté/200)
+   * Autrement, le courant absorbé provient de la Phase 1, on diminue de la valeur du courant absorbée sur la Phase 1
+   */
+  if(charge.volatile_conf->solar_active)
+	return (!tic_data.i_inst[phase_1])?
+			tic_data.p_injectee/200:-(tic_data.i_inst[phase_1]);
+  
   if(!charge.static_conf->which_voltage) {                    // Le réseau est de type Monophasé
     ret = tic_data.i_max - tic_data.i_inst[phase_1];
   } else {                                                    // Autrement, le réseau est de type Triphasé
@@ -161,7 +169,8 @@ static void sm_charger_manage_tic_connection(void) {
   static bool prev_need_connection = false;
   
   bool need_connection =                                      // La connexion WS Module TIC est nécessaire lorsque :
-    charge.volatile_conf->off_peak_hours ||                   // L'option d'heure creuse uniquement est active
+    charge.volatile_conf->off_super_peak_hours ||			  // L'option d'Heures Super Creuses est active
+    charge.volatile_conf->off_peak_hours ||                   // L'option d'Heures Creuses est active
     charge.is_charge_active;                                  // La charge est en cours...
   
   // Détection de changement d'état (front) pour éviter la réinstanciation en boucle de la connexion
@@ -219,30 +228,48 @@ static void sm_charger_manage_degraded_mode(void) {
 
 /**
  * \fn void sm_charger_update_hc_state(void)
- * \brief Fonction permettant la gestion de charge en Heures Creuses
+ * \brief Fonction permettant la gestion de charge en Heures Creuses ou Heures Super Creuse
  *        au travers de la connexion WS au Module TIC
+ * \warning
+ *		L'option de charge en Heures Super Creuses l'emporte; autrement dit, si l'option Heure Super Creuses est
+ *		active, alors le déblocage ne se fera qu'en Heures Super Creuses.
+ *		L'option Heures Creuses inclue quant à elle l'Heures Super Creuses.
  */
 static void sm_charger_update_hc_state(void) {
     
   if(!ws_client_is_connected())                               // Pas de connexion effective
-    return;                                                   // Echappement
+    return;                                                   // Echappement immédiat
 
-  if(!charge.volatile_conf->off_peak_hours) {                 // Aucune configuration de charge en heure creuse effective ?
-    charge.is_hc_active = 0;                                  // Réinitialisation du flag (Ce cas ne doit pas arriver)
-    return;                                                   // Echappement
-  }
+  charge.is_hc_active = 0;                                    // Désautorisation de charge dans tous les cas
+
+  if(!charge.volatile_conf->off_super_peak_hours &&           // Aucune configuration de charge en heures creuses ?
+     !charge.volatile_conf->off_peak_hours)
+    return;                                                   // Echappement immédiat
     
-  /* Il est nécessaire de prendre tous les cas possible d'heures creuses :
-   *    - Mode Standard peut être : 'HEURE CREUSE' , 'HC BLEU' , 'HC BLANC' , 'HC ROUGE'.
+  /* Dans le cas d'une charge en Heures Creuses, il est nécessaire de prendre tous les cas :
+   *    - Mode Standard peut être : 'HEURE CREUSE' , 'HC BLEU' , 'HC BLANC' , 'HC ROUGE' , 'HEURE SUPER CREUSE'.
    *    - Mode Historique peut être : 'HC..' , 'HCJB' , 'HCJW' , 'HCJR'.
    * La stratégie est d'utiliser le début de chaine 'HC' dans les 2 modes, et de prendre la chaine 
    * complète sur le mode standard.
    */
-  if(!memcmp(tic_data.tarif,"HEURE CREUSE",12) ||
-     !memcmp(tic_data.tarif,"HC",2))
-    charge.is_hc_active = 1;                                  // La charge est autorisée
-  else                                                        // Autrement, les heures pleines sont en cours ...
-    charge.is_hc_active = 0;                                  // La charge n'est pas autorisée
+  if(charge.volatile_conf->off_peak_hours) {
+	if(!memcmp(tic_data.tarif,"HEURE SUPER CREUSE",18) ||
+       !memcmp(tic_data.tarif,"HEURE CREUSE",12) ||
+       !memcmp(tic_data.tarif,"HC",2))
+      charge.is_hc_active = 1;                                // Autorisation de charge
+  }
+  
+  /* Mais dans le cas d'une charge en Heures Super Creuse, il est nécessaire de prendre uniquement
+   * le cas de 
+   * 	- Mode Standard doit être : 'HEURE SUPER CREUSE'.
+   *    - Mode Historique, rien !
+   */
+  if(charge.volatile_conf->off_super_peak_hours) {
+    if(!memcmp(tic_data.tarif,"HEURE SUPER CREUSE",18))
+	  charge.is_hc_active = 1;                                // Autorisation de charge
+    else													  // Désautorisation de charge précédente
+	  charge.is_hc_active = 0;                                // Heures Super Creuse étant prioritaires
+  }
 }
 
 /**
@@ -273,7 +300,8 @@ static void sm_charger_charge_with_tic_module(void) {
 
   charge.flag_lock_evse = 0;                                  // Déblocage de l'EVSE, celui-ci sera bloqué après si nécessaire
 
-  if(charge.volatile_conf->off_peak_hours) {                  // La configuration Heures Creuses est active
+  if(charge.volatile_conf->off_super_peak_hours ||   		  // La configuration Heures Super Creuses est active ou
+	 charge.volatile_conf->off_peak_hours) {				  // La configuration Heures Creuses est active
     if(!charge.is_hc_active) {                                // Les Heures Creuses ne sont pas en cours
       if(ws_client_is_connected())
         charge.parameters.state = charge_state_wait_hc;       // Positionnement de l'état en Attente HC
