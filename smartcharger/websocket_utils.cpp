@@ -58,6 +58,20 @@ static void ws_client_tic_parser(uint8_t *payload) {
   }else if(strstr(str,"\"PCOUP\"")) {
     if(sscanf(str, "{\"PCOUP\":\"%2[^\"]\"}",value) == 1) {
       if(ws.static_conf) {
+		/* En mode Standard, PCOUP correspond à la puissance maximale en kVA pouvant être absorbée.
+		 * Il est donc nécessaire d'effectuer les calculs suivants:
+		 *		- Monophasé : (PCOUP x 1000)/200								-> PCOUPx10/2
+		 *		- Triphasés : (PCOUP x 1000)/600 (avec 600 ~ 380 x racine(3))	-> PCOUPx10/6
+		 * Pour obtenir le courant maximum admissible.
+		 * /!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\
+		 * Il est normalement nécessaire d'utiliser les informations URMSx (1,2,3) pour satifaire
+		 * la puissance par les équations:
+		 *		- Monophasé : (PCOUP x 1000)/URMS1
+		 *		- Triphasés : (PCOUP x 1000)/(U_Moy) avec U_Moy = (URMS1 + URMS2 + URMS3)/3
+		 * En effet, à courant (I) constant, une augmentation de la tenion (U) implique une augmentation
+		 * de la puissance P = U x I !
+		 * /!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\/!\
+		 */
         ws.tic_data->i_max = (!ws.static_conf->which_voltage) ?
                               ((uint8_t)atoi(value)*10)/2 : ((uint8_t)atoi(value)*10)/6;
       }
@@ -100,9 +114,11 @@ static void ws_server_on_event(uint8_t num, WStype_t type, uint8_t* payload, siz
   switch (type) {
     case WStype_CONNECTED:                                            // Un nouveau client s'est connecté !
       snprintf(data_to_send, sizeof(data_to_send),                    // Stringification des données
-               "{\"State\":\"%d\",\"Current\":\"%d\"}",
-               ws.charge_parameters->state,
-               ws.charge_parameters->current);
+			   "{\"State\":\"%d\",\"Current\":\"%d\",\"Power\":\"%.2f\",\"Force\":\"%d\"}",
+			   ws.charge_parameters->state,
+               ws.charge_parameters->current,
+		       ws.charge_parameters->power,
+		       ws.charge_parameters->force);
       ws_server_socket->sendTXT(num,data_to_send);                    // Envois des données au client nouvellement connecté 
       break;
     case WStype_TEXT:
@@ -135,7 +151,7 @@ static void ws_client_handler(void) {
 
     case ws_client_connect:
       ws_client_socket.begin(ws.tic->ip_or_hostname,ws.tic->portWs);  // Connexion au Module TIC
-      ws.timers_client[ws_client_data_received] = millis();          // Armement du timer pour le timeout de connexion
+      ws.timers_client[ws_client_data_received] = millis();           // Armement du timer pour le timeout de connexion
       ws.client_state = ws_client_connecting;
       break;
         
@@ -235,9 +251,11 @@ void ws_server_set_charge_parameters(CHARGE_PARAMETERS_t *data) {
 void ws_server_send_broadcast(void) {
   char data_to_send[64];
   snprintf(data_to_send, sizeof(data_to_send),                        // Stringification des données
-           "{\"State\":\"%d\",\"Current\":\"%d\"}",
+           "{\"State\":\"%d\",\"Current\":\"%d\",\"Power\":\"%.2f\",\"Force\":\"%d\"}",
            ws.charge_parameters->state,
-           ws.charge_parameters->current);
+           ws.charge_parameters->current,
+		   ws.charge_parameters->power,
+		   ws.charge_parameters->force);
   ws_server_socket->broadcastTXT(data_to_send);                       // Envois en broadcast sur la WS Server
 }
 
