@@ -6,7 +6,7 @@
 #include "../../hal_utils.h"
 
 //< MACRO de version logicielle SmartCharger_utils
-#define V_SM_LOGICIEL             "v1.0.4"              // Version Logicielle
+#define V_SM_LOGICIEL             "v1.0.5"              // Version Logicielle
 
 //< Define de gestion d'intensite sur 5 bits (optimisation spatiale de l'intensité en mémoire EEPROM)
 #define READ_OFFSET_5B(x)         (x+6)
@@ -37,16 +37,28 @@ typedef struct
   uint16_t              portWs;                         // Port de service WebSocket du Module TIC 
 } TIC_CONF_FIELDS_t;
 
+//< Structure d'Heures Creuses
+typedef struct
+{
+  uint16_t off_standards				  	  :1;		// Heures Creuses Standards
+  uint16_t off_blues					  	  :1;		// Heures Creuses Jours Bleus
+  uint16_t off_whites					  	  :1;		// Heures Creuses Jours Blancs
+  uint16_t off_reds					  	  	  :1;		// Heures Creuses Jours Rouges
+  uint16_t off_super					  	  :1;		// Heures Super Creuses
+  uint16_t off_weekends				  	  	  :1;		// Heures Creuses Weekends
+  uint16_t off_wednesday				  	  :1;		// Heures Creuses Mercredis
+  uint16_t RUF							  	  :9;		// Réservé Usage Future
+} OFF_PEAK_HOURS_t;
+
 //< Structure de Configurations fonctionnelles qui peuvent evoluer dans le temps (Configurable à la volé dans l'onglet d'exploitation)
 typedef struct
 {
+  OFF_PEAK_HOURS_t off_peak_hours;						// Structure d'heures creuses
   uint16_t degraded_current                   :5;       // Intensite dégradée en perte de communication TIC (WARNING : I = intensity + 6)
   uint16_t limite_current                     :5;       // Intensite de charge limite (WARNING : I = intensity + 6)
-  uint16_t off_super_peak_hours               :1;       // Charge sur les heures super creuses uniquement (1 : Heures super creuses)
-  uint16_t off_peak_hours                     :1;       // Charge sur les heures creuses uniquement (1 : Heures creuses)
   uint16_t solar_active						  :1;		// Charge privilégiant l'énergie solaire
   uint16_t theme                              :1;       // Thème (0 : foncé / 1 : clair)
-  uint16_t RUF                                :2;       // Réservé Usage Futures
+  uint16_t RUF                                :4;       // Réservé Usage Futures
 } VOLATILE_CONF_FIELDS_t;
 
 //< Structure de données TIC extraites au travers du Module TIC et du service WebSocket
@@ -75,7 +87,9 @@ typedef enum
 typedef struct
 {
   CHARGE_STATE_e state;                                 // Etat de charge
-  uint8_t current;                                      // Courant de charge
+  uint8_t current;                                      // Courant de charge (en A)
+  float power;											// Puissance de charge (en kW)
+  bool force;											// Etat du forçage de recharge rapide
 } CHARGE_PARAMETERS_t;
 
 //< Enumération des types de sauvegardes en mémoire EEPROM

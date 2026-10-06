@@ -12,7 +12,7 @@
  * 
  * PS :
  *    - La WS Server est forcément instanciée
- *    - La WS Client est facultatif (dépendant de la configuration de l'équippement)
+ *    - La WS Client est facultative (dépendant de la configuration de l'équippement)
  */
 
 /*

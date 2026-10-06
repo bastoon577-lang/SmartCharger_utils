@@ -13,11 +13,22 @@ static CHARGER_t charge;
  */
 /**
  * \fn void void sm_charger_init_state(void)
- * \brief Fonction permettant l'initialisation de l'état et du courant
+ * \brief Fonction permettant l'initialisation de l'état et du courant initial
  */
 static inline void sm_charger_init_state(void) {
   charge.parameters.state   = charge_state_not_Connected;     // Positionnement de l'état en Attente de VE
   charge.parameters.current = MINIMAL_CHARGE_CURRENT;         // Positionnement du courant initial
+}
+
+/**
+ * \fn bool sm_charger_get_off_peak_hours(void)
+ * \brief Fonction permettant de retourner l'état d'activation d'heure creuse.
+ * \return
+ *		1 - Une ou plusieurs option(s) Heure(s) Creuse(s) est active
+ *		0 - Aucune option
+ */
+static inline bool sm_charger_get_off_peak_hours(void) {
+  return ((*(uint16_t*)&charge.volatile_conf->off_peak_hours) != 0);
 }
 
 /**
@@ -59,13 +70,34 @@ static int8_t sm_charger_compute_available_current(void) {
   int8_t available_current[nb_phases] = {0};
   int8_t ret;
   
-  /* L'option de privilège solaire est active
-   * Si aucune absorption n'est constaté sur la Phase 1, on retourne le courant injecté (P_Injecté/200)
-   * Autrement, le courant absorbé provient de la Phase 1, on diminue de la valeur du courant absorbée sur la Phase 1
+  /* On raisonne en terme de courant disponible "Pouvant être absorbé par le VE".
+   * On cherche ici à minimiser le courant injecté sur le réseau et le courant absorbé sur le réseau.
    */
-  if(charge.volatile_conf->solar_active)
-	return (!tic_data.i_inst[phase_1])?
-			tic_data.p_injectee/200:-(tic_data.i_inst[phase_1]);
+  if(charge.volatile_conf->solar_active &&					  // L'option de privilège solaire est active
+     !charge.flag_force_quick_charge) {						  // La recharge rapide n'est pas souhaitée
+    if(!charge.static_conf->which_voltage) {                  // Le réseau est de type Monophasé
+	  /* Il y a présence de puissance injectée, on retourne le courant injecté (P/U) (Pour augmenter la puissance du VE).
+       * Autrement, on retourne l'opposé du courant absorbé (Pour diminuer la puissance du VE).
+	   */
+	  return (tic_data.p_injectee)?
+			  tic_data.p_injectee/230:-(tic_data.i_inst[phase_1]);
+	} else {												  // Autrement, le réseau est de type Triphasé
+	  /* Il y a présence de puissance injectée, on retourne le courant injecté (P/U) (Pour augmenter la puissance du VE).
+       * Autrement, on retourne l'opposé du courant maximal absorbé (Pour diminuer la puissance du VE).
+	   */
+	  if(tic_data.p_injectee)
+		return tic_data.p_injectee/(400.0f*1.73205f);
+	  else {
+		// Recherche du courant maximum absorbé sur chaque phases du réseau
+		ret = tic_data.i_inst[phase_1];
+		for(uint8_t p=0;p<nb_phases;p++) {
+		  if(tic_data.i_inst[p] > ret)
+            ret = tic_data.i_inst[p];
+		}
+		return -(ret);										  // On retourne l'opposé
+	  }
+	}
+  }
   
   if(!charge.static_conf->which_voltage) {                    // Le réseau est de type Monophasé
     ret = tic_data.i_max - tic_data.i_inst[phase_1];
@@ -73,7 +105,7 @@ static int8_t sm_charger_compute_available_current(void) {
     for(uint8_t p=0;p<nb_phases;p++)                          // Calculs des courants disponibles sur chaque phases
       available_current[p] = tic_data.i_max - tic_data.i_inst[p];
     
-    /// Recherche du courant minimum disponible sur le réseau
+    /// Recherche du courant minimum disponible sur chaque phases du réseau
     ret = available_current[phase_1];
     for(uint8_t p=0;p<nb_phases;p++) {
       if(available_current[p] < ret)
@@ -114,7 +146,7 @@ static inline void sm_charger_waiting_before_decrease(uint8_t decrease_value) {
  * \brief Fonction permettant la gestion du courant disponible pour le VE.
  *        Cette fonction permet l'adaptation du courant de charge par l'intermédiaire 
  *        des données issues du Module TIC. La stratégie consiste à diminuer/augmenter la consigne
- *        en utilisant une néanmoins une priorité vis à vis des diminutions de courant face aux augmentations.
+ *        par une priorité vis à vis des diminutions de courant face aux augmentations.
  *        L'intérêt ici est de préserver le réseau et d'effectuer un "PID" lent mais efficace.
  * \param in, le courant disponible sur le réseau
  */
@@ -147,8 +179,9 @@ static void sm_charger_adjust_current(int8_t available_current) {
     sm_charger_waiting_before_increase(4);                    // Augmentation de 4A du courant de charge
   }
   
-  // Néanmoins, il ne faut pas dépasser la limite imposée !
-  if(charge.parameters.current > sm_charger_read_limit_current())
+  // Néanmoins, il ne faut pas dépasser la limite imposée, sauf lorsqu'une recharge rapide est demandée
+  if(charge.parameters.current > sm_charger_read_limit_current() &&
+	 !charge.flag_force_quick_charge)
     charge.parameters.current = sm_charger_read_limit_current();
   
   // Mais, il est important de ne pas excéder la puissance maximale du réseau !
@@ -169,8 +202,7 @@ static void sm_charger_manage_tic_connection(void) {
   static bool prev_need_connection = false;
   
   bool need_connection =                                      // La connexion WS Module TIC est nécessaire lorsque :
-    charge.volatile_conf->off_super_peak_hours ||			  // L'option d'Heures Super Creuses est active
-    charge.volatile_conf->off_peak_hours ||                   // L'option d'Heures Creuses est active
+    sm_charger_get_off_peak_hours() || 						  // Une option d'Heures Creuses est active
     charge.is_charge_active;                                  // La charge est en cours...
   
   // Détection de changement d'état (front) pour éviter la réinstanciation en boucle de la connexion
@@ -228,12 +260,8 @@ static void sm_charger_manage_degraded_mode(void) {
 
 /**
  * \fn void sm_charger_update_hc_state(void)
- * \brief Fonction permettant la gestion de charge en Heures Creuses ou Heures Super Creuse
+ * \brief Fonction permettant la gestion de charge en Heures Creuses
  *        au travers de la connexion WS au Module TIC
- * \warning
- *		L'option de charge en Heures Super Creuses l'emporte; autrement dit, si l'option Heure Super Creuses est
- *		active, alors le déblocage ne se fera qu'en Heures Super Creuses.
- *		L'option Heures Creuses inclue quant à elle l'Heures Super Creuses.
  */
 static void sm_charger_update_hc_state(void) {
     
@@ -241,35 +269,82 @@ static void sm_charger_update_hc_state(void) {
     return;                                                   // Echappement immédiat
 
   charge.is_hc_active = 0;                                    // Désautorisation de charge dans tous les cas
+  
+  if(charge.flag_force_quick_charge) {						  // Un forçage rapide est effectif
+    charge.is_hc_active = 1;
+	return;
+  }
 
-  if(!charge.volatile_conf->off_super_peak_hours &&           // Aucune configuration de charge en heures creuses ?
-     !charge.volatile_conf->off_peak_hours)
+  if(!sm_charger_get_off_peak_hours())						  // Aucune Heures Creuses n'est active
     return;                                                   // Echappement immédiat
-    
-  /* Dans le cas d'une charge en Heures Creuses, il est nécessaire de prendre tous les cas :
-   *    - Mode Standard peut être : 'HEURE CREUSE' , 'HC BLEU' , 'HC BLANC' , 'HC ROUGE' , 'HEURE SUPER CREUSE'.
-   *    - Mode Historique peut être : 'HC..' , 'HCJB' , 'HCJW' , 'HCJR'.
-   * La stratégie est d'utiliser le début de chaine 'HC' dans les 2 modes, et de prendre la chaine 
-   * complète sur le mode standard.
+
+  /* Cas d'une charge en Heures Creuses Standards :
+   *    - Mode Standard peut être : 'HEURE CREUSE',
+   *    - Mode Historique peut être : 'HC..'.
    */
-  if(charge.volatile_conf->off_peak_hours) {
-	if(!memcmp(tic_data.tarif,"HEURE SUPER CREUSE",18) ||
-       !memcmp(tic_data.tarif,"HEURE CREUSE",12) ||
-       !memcmp(tic_data.tarif,"HC",2))
-      charge.is_hc_active = 1;                                // Autorisation de charge
+  if(charge.volatile_conf->off_peak_hours.off_standards) {
+	if(!memcmp(tic_data.tarif,"HEURE CREUSE",12) ||
+	   !memcmp(tic_data.tarif,"HC..",4))
+	  charge.is_hc_active = 1;
   }
   
-  /* Mais dans le cas d'une charge en Heures Super Creuse, il est nécessaire de prendre uniquement
-   * le cas de 
-   * 	- Mode Standard doit être : 'HEURE SUPER CREUSE'.
-   *    - Mode Historique, rien !
+  /* Cas d'une charge en Heures Creuses Bleues :
+   *    - Mode Standard peut être : 'HC BLEU',
+   *    - Mode Historique peut être : 'HCJB'.
    */
-  if(charge.volatile_conf->off_super_peak_hours) {
-    if(!memcmp(tic_data.tarif,"HEURE SUPER CREUSE",18))
-	  charge.is_hc_active = 1;                                // Autorisation de charge
-    else													  // Désautorisation de charge précédente
-	  charge.is_hc_active = 0;                                // Heures Super Creuse étant prioritaires
+  if(charge.volatile_conf->off_peak_hours.off_blues) {
+	if(!memcmp(tic_data.tarif,"HC BLEU",7) ||
+	   !memcmp(tic_data.tarif,"HCJB",4))
+	  charge.is_hc_active = 1;
   }
+  
+  /* Cas d'une charge en Heures Creuses Blancs :
+   *    - Mode Standard peut être : 'HC BLANC',
+   *    - Mode Historique peut être : 'HCJW'.
+   */
+  if(charge.volatile_conf->off_peak_hours.off_whites) {
+	if(!memcmp(tic_data.tarif,"HC BLANC",8) ||
+	   !memcmp(tic_data.tarif,"HCJW",4))
+	  charge.is_hc_active = 1;
+  }
+  
+  /* Cas d'une charge en Heures Creuses Rouges :
+   *    - Mode Standard peut être : 'HC ROUGE',
+   *    - Mode Historique peut être : 'HCJR'.
+   */
+  if(charge.volatile_conf->off_peak_hours.off_reds) {
+	if(!memcmp(tic_data.tarif,"HC ROUGE",8) ||
+	   !memcmp(tic_data.tarif,"HCJR",4))
+	  charge.is_hc_active = 1;
+  }
+    
+  /* Cas d'une charge en Heures Super Creuses :
+   *    - Mode Standard peut être : 'HEURE SUPER CREUSE',
+   *    - Mode Historique n'implémente rien.
+   */
+  if(charge.volatile_conf->off_peak_hours.off_super) {
+	if(!memcmp(tic_data.tarif,"HEURE SUPER CREUSE",18))
+      charge.is_hc_active = 1;
+  }
+  
+  /* Cas d'une charge en Heures Weekends :
+   *    - Mode Standard peut être : 'HEURE WEEK-END',
+   *    - Mode Historique n'implémente rien.
+   */
+  if(charge.volatile_conf->off_peak_hours.off_weekends) {
+	if(!memcmp(tic_data.tarif,"HEURE WEEK-END",14))
+      charge.is_hc_active = 1;
+  }
+  
+  /* Cas d'une charge en Heures Mercredis :
+   *    - Mode Standard peut être : 'HP MERCREDI',
+   *    - Mode Historique n'implémente rien.
+   */
+  if(charge.volatile_conf->off_peak_hours.off_wednesday) {
+	if(!memcmp(tic_data.tarif,"HP MERCREDI",11))
+      charge.is_hc_active = 1;
+  }
+  
 }
 
 /**
@@ -300,8 +375,7 @@ static void sm_charger_charge_with_tic_module(void) {
 
   charge.flag_lock_evse = 0;                                  // Déblocage de l'EVSE, celui-ci sera bloqué après si nécessaire
 
-  if(charge.volatile_conf->off_super_peak_hours ||   		  // La configuration Heures Super Creuses est active ou
-	 charge.volatile_conf->off_peak_hours) {				  // La configuration Heures Creuses est active
+  if(sm_charger_get_off_peak_hours()) {						  // Une configuration Heures Creuses est active
     if(!charge.is_hc_active) {                                // Les Heures Creuses ne sont pas en cours
       if(ws_client_is_connected())
         charge.parameters.state = charge_state_wait_hc;       // Positionnement de l'état en Attente HC
@@ -349,7 +423,7 @@ void sm_charger_init(STATIC_CONF_FIELDS_t *static_conf, VOLATILE_CONF_FIELDS_t *
   charge.static_conf = static_conf;
 
   sm_charger_init_state();
-  hal_evse_init();                                            // Initialisation du service Viridian
+  hal_evse_init();
 }
 
 /**
@@ -380,7 +454,7 @@ void sm_charger_handler(void) {
   timer_scrut_evse = millis();                                // Réarmement du timer
   
   if(charge.counter_starting_charge)                          // Le compteur est décrémentable
-    charge.counter_starting_charge--;                         // On décrémente (tendre à 0)
+    charge.counter_starting_charge--;                         // On décrémente (tendre vers 0)
   
   // Communication avec l'EVSE (Courant de consigne et/ou blocage)
   hal_evse_update_output((charge.flag_lock_evse)?0:charge.parameters.current); 
@@ -411,6 +485,8 @@ void sm_charger_handler(void) {
         case evse_Not_Connected:
           charge.parameters.state = charge_state_not_Connected;
           charge.parameters.current = MINIMAL_CHARGE_CURRENT;
+		  if(!charge.counter_starting_charge)
+		    charge.flag_force_quick_charge = 0;				  // Interrompre le forcage de recharge rapide
           break;
         case evse_Com_Fault:
         default:
@@ -420,11 +496,36 @@ void sm_charger_handler(void) {
     }
   }
 
+  // Mise à jour du forçage de recharge rapide
+  charge.parameters.force = charge.flag_force_quick_charge;
+
   // Mise à jour de l'IHM par WebSocket (uniquement si un changement à eu lieu)
   if(memcmp(&previous_charge_parameters,&charge.parameters,sizeof(CHARGE_PARAMETERS_t)) != 0) {
     memcpy(&previous_charge_parameters,&charge.parameters,sizeof(CHARGE_PARAMETERS_t));
+	// Calcul de la puissance VE
+	if(!charge.static_conf->which_voltage)					  // En monophasé
+	  charge.parameters.power=
+				(charge.parameters.current*230.0f)/1000.0f;
+    else													  // En triphasés
+	  charge.parameters.power=
+				(charge.parameters.current*400.0f*1.73205f)/1000.0f;
+
     ws_server_send_broadcast(); 
   }
+}
+
+/**
+ * \fn void sm_charger_set_force_charge(uint8_t value)
+ */
+void sm_charger_set_force_charge(uint8_t value) {
+    charge.flag_force_quick_charge = value;
+}
+
+/**
+ * \fn uint8_t sm_charger_get_force_charge(void)
+ */
+uint8_t sm_charger_get_force_charge(void) {
+    return charge.flag_force_quick_charge;
 }
 
 /**

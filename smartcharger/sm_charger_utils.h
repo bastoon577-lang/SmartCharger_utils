@@ -28,13 +28,14 @@ typedef struct
   STATIC_CONF_FIELDS_t *static_conf;        // Pointeur vers la structure STATIC_CONF_FIELDS_t
   CHARGE_PARAMETERS_t parameters;           // Paramètres de charge VE
   uint8_t counter_starting_charge;			// Compteur de début de charge
-  uint8_t is_charge_active     	: 1;        // Bitfield de Charge en cours
-  uint8_t is_limited_charge    	: 1;        // Bitfield de Charge dégradée suite à la perte de connexion au Module TIC
-  uint8_t is_hc_active         	: 1;        // Bitfield d'heures creuses en cours...
-  uint8_t flag_lock_evse       	: 1;        // Bitfield de blocage de l'EVSE
-  uint8_t flag_scrut_evse      	: 1;        // Bitfield de lecture de l'EVSE
-  uint8_t flag_prevent_updates 	: 1;		// Bitfield d'autorisation de mise à jour firmware
-  uint8_t RUF 					: 2;		// Réservé Usage Future
+  uint8_t is_charge_active     		: 1;    // Bitfield de Charge en cours
+  uint8_t is_limited_charge    		: 1;    // Bitfield de Charge dégradée suite à la perte de connexion au Module TIC
+  uint8_t is_hc_active         		: 1;    // Bitfield d'heures creuses en cours...
+  uint8_t flag_lock_evse       		: 1;    // Bitfield de blocage de l'EVSE
+  uint8_t flag_scrut_evse      		: 1;    // Bitfield de lecture de l'EVSE
+  uint8_t flag_force_quick_charge	: 1;	// Bitfield de forçage de la charge
+  uint8_t flag_prevent_updates 		: 1;	// Bitfield d'autorisation de mise à jour firmware
+  uint8_t RUF 						: 1;	// Réservé Usage Future
 } CHARGER_t;
 
 /**
@@ -50,6 +51,20 @@ void sm_charger_init(STATIC_CONF_FIELDS_t *static_conf, VOLATILE_CONF_FIELDS_t *
  * \brief Handler du service CHARGER à appeler régulièrement
  */
 void sm_charger_handler(void);
+
+/**
+ * \fn void sm_charger_set_force_charge(uint8_t value)
+ * \brief Fonction permettant de positionner le flag de charge forcée
+ *		  à la valeur value
+ * \param in, la valeur du flag
+ */
+void sm_charger_set_force_charge(uint8_t value);
+
+/**
+ * \fn uint8_t sm_charger_get_force_charge(void)
+ * \brief Fonction permettant de lire la valeur flag de charge forcée.
+ */
+uint8_t sm_charger_get_force_charge(void);
 
 /**
  * \fn uint8_t sm_charger_prevent_updates(void)
