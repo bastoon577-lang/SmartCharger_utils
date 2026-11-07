@@ -15,29 +15,16 @@
  *    - La WS Client est facultative (dépendant de la configuration de l'équippement)
  */
 
-/*
- * Déclaration des Timeouts liés à l'état connecté.
- * 
- * Néanmoins, le Module TIC peut parfois resté muet (aucun changement de donnée) du fait d'une consommation proche de 0 !
- *
- * Le Module TIC intègre un mode écho, qui renvois le message émit au client et permet une réinitialisation naturelle du timer
- * La stratégie consiste à :
- *		- Si aucune donnée n'a été reçu depuis TIMEOUT_ALIVE
- *			- Si le dernier ping envoyé date d'après TIMEOUT_PING
- *				--> Emettre un Ping (écho)
- *		- Si aucune donnée n'a été reçu depuis TIMEOUT_DATA_RECV
- *			--> Effectuer une déconnexion
- */
-#define TIMEOUT_DATA_RECV     	8000
-#define TIMEOUT_PING		  	1000
-#define TIMEOUT_ALIVE		  	5000
-#define TIMEOUT_CONNECTING    	5000
-#define TIMEOUT_RECONNECT_RETRY 5000
+//< Defines des TIMEOUT
+#define TIMEOUT_RETRY_CONNECT   30000	// Timer de tentative de reconnexion
+#define TIMEOUT_DATA_RECV     	20000	// Timer d'absence de donnée
+#define TIMEOUT_CONNEXION   	2000	// Timer de tentative de connexion
  
 //< Enumération des Timers WebSockets Client
 enum {
+  ws_client_retry_connect,
   ws_client_data_received,
-  ws_client_last_ping,
+  ws_client_connexion,
   ws_client_nb_timers
 };
 
@@ -52,15 +39,15 @@ typedef enum {
 
 //< Structure des données WebSocket
 typedef struct {
-  unsigned long timers_client[ws_client_nb_timers];			// Timers de fonctionnement internes
-  CHARGE_PARAMETERS_t *charge_parameters;					// Pointeur vers les paramètres de charge VE
-  STATIC_CONF_FIELDS_t *static_conf;        				// Pointeur vers la structure STATIC_CONF_FIELDS_t
-  WS_CLIENT_STATE_e client_state;							// Etat de connexion de la WS client
-  TIC_CONF_FIELDS_t *tic;									// Pointeur vers les paramètres de configuration TIC
-  TIC_DATA_t *tic_data;										// Pointeur vers la structure TIC_DATA
-  uint8_t is_client_active			: 1;					// Bitfield de client actif
-  uint8_t is_client_socket_active	: 1;					// Bitfield de demande de connexion client
-  uint8_t RUF						: 6;					// Réservé usage future
+  unsigned long timers_client[ws_client_nb_timers];			  // Timers de fonctionnement internes
+  CHARGE_PARAMETERS_t *charge_parameters;					  // Pointeur vers les paramètres de charge VE
+  STATIC_CONF_FIELDS_t *static_conf;        				  // Pointeur vers la structure STATIC_CONF_FIELDS_t
+  WS_CLIENT_STATE_e client_state;							  // Etat de connexion de la WS client
+  TIC_CONF_FIELDS_t *tic;									  // Pointeur vers les paramètres de configuration TIC
+  TIC_DATA_t *tic_data;										  // Pointeur vers la structure TIC_DATA
+  uint8_t is_client_active			: 1;					  // Bitfield de client actif
+  uint8_t is_client_socket_active	: 1;					  // Bitfield de demande de connexion client
+  uint8_t RUF						: 6;					  // Réservé usage future
 } WS_t;
 
 /**

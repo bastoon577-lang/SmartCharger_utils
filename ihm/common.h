@@ -1,3 +1,4 @@
+// Entête présente sur toutes les pages HTML (Configuration & Exploitation)
 const char* htmlHeader PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="fr">
@@ -7,6 +8,7 @@ const char* htmlHeader PROGMEM = R"rawliteral(
 <title>SmartCharger</title>
 )rawliteral";
 
+// Scripts JS communs (Configuration & Exploitation)
 const char* scriptsCommon PROGMEM = R"rawliteral(  
   function sendPostRequest(url,data,callback) {
     var xhr = new XMLHttpRequest();
