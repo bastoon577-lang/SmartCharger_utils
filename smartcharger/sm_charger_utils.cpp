@@ -65,28 +65,53 @@ static inline uint8_t sm_charger_read_degraded_current(void) {
  *    Le courant disponible en Ampères
  */
 static int8_t sm_charger_compute_available_current(void) {
-
+  bool network_power = false, solar_power = false;
   enum {phase_1, phase_2, phase_3, nb_phases};
   int8_t available_current[nb_phases] = {0};
-  int8_t ret;
+  int8_t ret = MINIMAL_CHARGE_CURRENT;
   
-  /* On raisonne en terme de courant disponible "Pouvant être absorbé par le VE".
-   * On cherche ici à minimiser le courant injecté sur le réseau et le courant absorbé sur le réseau.
+  if(!ws_client_is_connected())
+    return ret;
+  
+  /* Attribution du type de charge selon les énergies :
+   * 	- Solaire,
+   *	- Du réseau de distribution.
    */
-  if(charge.volatile_conf->solar_active &&					  // L'option de privilège solaire est active
-     !charge.flag_force_quick_charge) {						  // La recharge rapide n'est pas souhaitée
-    if(!charge.static_conf->which_voltage) {                  // Le réseau est de type Monophasé
+  if(charge.flag_force_quick_charge) {						  // Le mode charge rapide est demandé
+    network_power = true;							
+  } else if (charge.is_solar_enable &&						  // La charge solaire est en cours...
+		     !charge.is_hc_enable) {						  // La charge HC n'est pas en cours...
+	solar_power = true;
+  } else if (!charge.is_solar_enable &&						  // La charge solaire n'est pas en cours... 
+			 charge.is_hc_enable) {							  // La charge HC est en cours...
+	network_power = true; 
+  } else if (charge.is_solar_enable &&						  // La charge solaire est en cours... 
+			 charge.is_hc_enable) {							  // La charge HC est en cours...
+	// Il y a chevauchement de charge solaire et de charge HC
+	if(charge.volatile_conf->prio_hc_on_solar)				  // L'option de priorisation HC est active
+	  network_power = true;
+	else 
+	  solar_power = true;
+  } else													  // Autrement
+    network_power = true;	
+  
+  /* La charge est oppérée par l'énergie solaire :
+   * 	On raisonne en terme de courant disponible "Pouvant être absorbé par le VE".
+   * 	On cherche ici à minimiser le courant injecté sur le réseau et le courant absorbé sur le réseau.
+   */
+  if(solar_power) {
+    if(!charge.static_conf->which_voltage) {				  // Le réseau est de type Monophasé
 	  /* Il y a présence de puissance injectée, on retourne le courant injecté (P/U) (Pour augmenter la puissance du VE).
        * Autrement, on retourne l'opposé du courant absorbé (Pour diminuer la puissance du VE).
 	   */
-	  return (tic_data.p_injectee)?
-			  tic_data.p_injectee/230:-(tic_data.i_inst[phase_1]);
+	  ret = (tic_data.p_injectee)?
+			  tic_data.p_injectee/VOLTAGE_1PH:-(tic_data.i_inst[phase_1]);
 	} else {												  // Autrement, le réseau est de type Triphasé
 	  /* Il y a présence de puissance injectée, on retourne le courant injecté (P/U) (Pour augmenter la puissance du VE).
        * Autrement, on retourne l'opposé du courant maximal absorbé (Pour diminuer la puissance du VE).
 	   */
 	  if(tic_data.p_injectee)
-		return tic_data.p_injectee/(400.0f*1.73205f);
+		ret = tic_data.p_injectee/(VOLTAGE_3PH*ROOT_3);
 	  else {
 		// Recherche du courant maximum absorbé sur chaque phases du réseau
 		ret = tic_data.i_inst[phase_1];
@@ -94,24 +119,29 @@ static int8_t sm_charger_compute_available_current(void) {
 		  if(tic_data.i_inst[p] > ret)
             ret = tic_data.i_inst[p];
 		}
-		return -(ret);										  // On retourne l'opposé
+		ret = -(ret);										  // On retourne l'opposé
 	  }
 	}
   }
   
-  if(!charge.static_conf->which_voltage) {                    // Le réseau est de type Monophasé
-    ret = tic_data.i_max - tic_data.i_inst[phase_1];
-  } else {                                                    // Autrement, le réseau est de type Triphasé
-    for(uint8_t p=0;p<nb_phases;p++)                          // Calculs des courants disponibles sur chaque phases
-      available_current[p] = tic_data.i_max - tic_data.i_inst[p];
+  // La charge est oppérée par l'énergie du réseau de distribution
+  if(network_power) {
+    if(!charge.static_conf->which_voltage) {                  // Le réseau est de type Monophasé
+      ret = tic_data.i_max - tic_data.i_inst[phase_1];
+    } else {                                                  // Autrement, le réseau est de type Triphasé
+      for(uint8_t p=0;p<nb_phases;p++)                        // Calculs des courants disponibles sur chaque phases
+        available_current[p] = tic_data.i_max - tic_data.i_inst[p];
     
-    /// Recherche du courant minimum disponible sur chaque phases du réseau
-    ret = available_current[phase_1];
-    for(uint8_t p=0;p<nb_phases;p++) {
-      if(available_current[p] < ret)
-        ret = available_current[p];
+      /// Recherche du courant minimum disponible sur chaque phases du réseau
+      ret = available_current[phase_1];
+      for(uint8_t p=0;p<nb_phases;p++) {
+        if(available_current[p] < ret)
+          ret = available_current[p];
+      }
     }
   }
+  
+  // Retour du résultat
   return ret;
 }
 
@@ -199,22 +229,24 @@ static void sm_charger_adjust_current(int8_t available_current) {
  * \brief Fonction permettant la gestion de connexion de la WS au Module TIC
  */
 static void sm_charger_manage_tic_connection(void) {
+  static unsigned long last_connection_attempt = 0;
   static bool prev_need_connection = false;
-  
+
   bool need_connection =                                      // La connexion WS Module TIC est nécessaire lorsque :
-    sm_charger_get_off_peak_hours() || 						  // Une option d'Heures Creuses est active
+    charge.volatile_conf->solar_active ||                     // La charge solaire est active
+    sm_charger_get_off_peak_hours()    ||                     // Une option d'Heures Creuses est active
     charge.is_charge_active;                                  // La charge est en cours...
-  
-  // Détection de changement d'état (front) pour éviter la réinstanciation en boucle de la connexion
-  if(need_connection != prev_need_connection) {
+
+  if(need_connection != prev_need_connection) {				  // Détection de changement d'état (front)
     prev_need_connection = need_connection;
-    
-    if (need_connection) {
-      ws_client_connect_on_tic_module(&tic_data);             // Demande de connexion
-      charge.flag_scrut_evse = 0;                             // Lecture de l'EVSE non autorisée tant qu'on cherche la synchro TIC
+
+    if(need_connection) {
+      last_connection_attempt = millis();
+      ws_client_connect_on_tic_module(&tic_data);         	  // Demande de connexion
+      charge.flag_scrut_evse = 0;                         	  // Lecture de l'EVSE non autorisée
     } else {
-      if (ws_client_is_connected()) {
-        ws_client_disconnect_from_tic_module();               // Demande de déconnexion propre à la machine à états de la socket
+      if(ws_client_is_connected()) {
+        ws_client_disconnect_from_tic_module();         	  // Demande de déconnexion propre
       }
     }
   }
@@ -230,31 +262,37 @@ static void sm_charger_manage_degraded_mode(void) {
   if(!charge.is_charge_active)
     return;
 
-  if(charge.counter_starting_charge == 1 &&					  // Avant dernier incrément de counter_starting_charge
-     !ws_client_is_connected()) {			                  // Le client n'est toujours pas connecté  
-    charge.parameters.current =                               // Adoption du courant limite configuré
-           sm_charger_read_degraded_current();
-    charge.parameters.state = charge_state_charging_degraded;
+  // Pendant la phase de démarrage, attente sans déclenchement du mode dégradé
+  if(charge.counter_starting_charge > 1)
+    return;
+
+  // Juste au moment critique (compteur == 1) et si le client n'est toujours pas là
+  if(charge.counter_starting_charge == 1 && !ws_client_is_connected()) {
+    charge.parameters.current = 						      // Attribution du courant de charge dégradé
+					sm_charger_read_degraded_current();
+    charge.parameters.state = 								  // Attribution de l'état IHM
+					charge_state_charging_degraded;
     charge.is_limited_charge = 1;
+	return;													  // Echappement pour ce cycle
   }
-  else if (charge.counter_starting_charge > 1)                // Le compteur est encore trop élevé
-    return;                                                   // Echappement immédiat
-    
-  if(!ws_client_is_connected()) {                             // La socket signale une perte de connexion
-    charge.parameters.state = charge_state_charging_degraded;
+
+  // Surveillance continue de la connexion WebSocket en cours de route
+  if(!ws_client_is_connected()) {
     charge.is_limited_charge = 1;
-  } else if(charge.is_limited_charge &&                       // Le mode dégradé est actif
-            ws_client_is_connected()) {                       // La connexion est de nouveau effective
-    charge.parameters.state = charge_state_charging;
+  } else if(charge.is_limited_charge && ws_client_is_connected()) {
+    charge.parameters.state  = charge_state_charging;
     charge.is_limited_charge = 0;
   }
-  
+
+  // Application finale de la limitation de courant si le mode dégradé est actif
   if(!charge.is_limited_charge)
     return;
 
+  charge.parameters.state = charge_state_charging_degraded;
   uint8_t limit = sm_charger_read_degraded_current();
-  if(charge.parameters.current > limit)                   
-    charge.parameters.current = limit;                        // Adoption du courant limite configuré
+  if(charge.parameters.current > limit) {
+    charge.parameters.current = limit;
+  }
   // Autrement le courant reste inchangé (déjà limité par l'asservissement précédent !)
 }
 
@@ -263,21 +301,15 @@ static void sm_charger_manage_degraded_mode(void) {
  * \brief Fonction permettant la gestion de charge en Heures Creuses
  *        au travers de la connexion WS au Module TIC
  */
-static void sm_charger_update_hc_state(void) {
-    
-  if(!ws_client_is_connected())                               // Pas de connexion effective
-    return;                                                   // Echappement immédiat
-
-  charge.is_hc_active = 0;                                    // Désautorisation de charge dans tous les cas
+static void sm_charger_update_hc_state(void) {  
+  /* Par défaut, on inhibe la charge possible en HC, puis on la récative !
+   * La logique de contrôle ici est de vérifier:
+   *	- Si l'option est active
+   *	- Si la valeur de Tarif correspond
+   * Pour permettre d'activer la charge
+   */
+  charge.is_hc_enable = 0;
   
-  if(charge.flag_force_quick_charge) {						  // Un forçage rapide est effectif
-    charge.is_hc_active = 1;
-	return;
-  }
-
-  if(!sm_charger_get_off_peak_hours())						  // Aucune Heures Creuses n'est active
-    return;                                                   // Echappement immédiat
-
   /* Cas d'une charge en Heures Creuses Standards :
    *    - Mode Standard peut être : 'HEURE CREUSE',
    *    - Mode Historique peut être : 'HC..'.
@@ -285,7 +317,7 @@ static void sm_charger_update_hc_state(void) {
   if(charge.volatile_conf->off_peak_hours.off_standards) {
 	if(!memcmp(tic_data.tarif,"HEURE CREUSE",12) ||
 	   !memcmp(tic_data.tarif,"HC..",4))
-	  charge.is_hc_active = 1;
+	  charge.is_hc_enable = 1;
   }
   
   /* Cas d'une charge en Heures Creuses Bleues :
@@ -294,8 +326,9 @@ static void sm_charger_update_hc_state(void) {
    */
   if(charge.volatile_conf->off_peak_hours.off_blues) {
 	if(!memcmp(tic_data.tarif,"HC BLEU",7) ||
-	   !memcmp(tic_data.tarif,"HCJB",4))
-	  charge.is_hc_active = 1;
+	   !memcmp(tic_data.tarif,"HCJB",4)) {
+	  charge.is_hc_enable = 1;
+	}
   }
   
   /* Cas d'une charge en Heures Creuses Blancs :
@@ -305,7 +338,7 @@ static void sm_charger_update_hc_state(void) {
   if(charge.volatile_conf->off_peak_hours.off_whites) {
 	if(!memcmp(tic_data.tarif,"HC BLANC",8) ||
 	   !memcmp(tic_data.tarif,"HCJW",4))
-	  charge.is_hc_active = 1;
+	  charge.is_hc_enable = 1;
   }
   
   /* Cas d'une charge en Heures Creuses Rouges :
@@ -315,7 +348,7 @@ static void sm_charger_update_hc_state(void) {
   if(charge.volatile_conf->off_peak_hours.off_reds) {
 	if(!memcmp(tic_data.tarif,"HC ROUGE",8) ||
 	   !memcmp(tic_data.tarif,"HCJR",4))
-	  charge.is_hc_active = 1;
+	  charge.is_hc_enable = 1;
   }
     
   /* Cas d'une charge en Heures Super Creuses :
@@ -324,7 +357,7 @@ static void sm_charger_update_hc_state(void) {
    */
   if(charge.volatile_conf->off_peak_hours.off_super) {
 	if(!memcmp(tic_data.tarif,"HEURE SUPER CREUSE",18))
-      charge.is_hc_active = 1;
+      charge.is_hc_enable = 1;
   }
   
   /* Cas d'une charge en Heures Weekends :
@@ -333,7 +366,7 @@ static void sm_charger_update_hc_state(void) {
    */
   if(charge.volatile_conf->off_peak_hours.off_weekends) {
 	if(!memcmp(tic_data.tarif,"HEURE WEEK-END",14))
-      charge.is_hc_active = 1;
+      charge.is_hc_enable = 1;
   }
   
   /* Cas d'une charge en Heures Mercredis :
@@ -341,10 +374,31 @@ static void sm_charger_update_hc_state(void) {
    *    - Mode Historique n'implémente rien.
    */
   if(charge.volatile_conf->off_peak_hours.off_wednesday) {
-	if(!memcmp(tic_data.tarif,"HP MERCREDI",11))
-      charge.is_hc_active = 1;
+	if(!memcmp(tic_data.tarif,"HC MERCREDI",11))
+      charge.is_hc_enable = 1;
   }
+}
+
+/**
+ * \fn void sm_charger_update_solar_state(void)
+ * \brief Fonction permettant la gestion de charge solaire
+ *        au travers de la connexion WS au Module TIC
+ */
+static void sm_charger_update_solar_state(void) {
+
+  charge.is_solar_enable = 0;								  // Re-initialisation
   
+  if(!charge.volatile_conf->solar_active)					  // L'option solaire n'est pas active
+	return;													  // Echappement immédiat
+	  
+  const char* now = tic_data.date + 7;			  			  // Extraction de l'heure courante du Linky
+  int cmp_start = memcmp(now,								  // Comparaison de l'heure de début de charge solaire
+					charge.volatile_conf->solar_start_hour,4);
+  int cmp_end = memcmp(now, 					  			  // Comparaison de l'heure de fin de charge solaire
+					charge.volatile_conf->solar_end_hour,4);
+
+  if(cmp_start >= 0 && cmp_end < 0) 						  // L'heure courante est dans la plage horaire
+	charge.is_solar_enable = 1;	
 }
 
 /**
@@ -353,10 +407,11 @@ static void sm_charger_update_hc_state(void) {
  */
 static void sm_charger_process_tic_data(void) {
   
-  sm_charger_update_hc_state();                               // Vérification des données TIC
+  sm_charger_update_solar_state();							  // Vérification de la Charge Solaire
+  sm_charger_update_hc_state();                               // Vérification des Heurese Creuse
 
   int8_t available_current = 
-    sm_charger_compute_available_current();                   // Calcul du courant disponible sur le réseau électrique
+					sm_charger_compute_available_current();   // Calcul du courant disponible sur le réseau électrique
   sm_charger_adjust_current(available_current);               // Ajustement du courant de charge VE
 }
 
@@ -374,29 +429,32 @@ static void sm_charger_charge_with_tic_module(void) {
   sm_charger_process_tic_data();                              // Gestion du processus de charge avec les données TIC
 
   charge.flag_lock_evse = 0;                                  // Déblocage de l'EVSE, celui-ci sera bloqué après si nécessaire
-
-  if(sm_charger_get_off_peak_hours()) {						  // Une configuration Heures Creuses est active
-    if(!charge.is_hc_active) {                                // Les Heures Creuses ne sont pas en cours
-      if(ws_client_is_connected())
-        charge.parameters.state = charge_state_wait_hc;       // Positionnement de l'état en Attente HC
-      else
-        charge.parameters.state = charge_state_wait_hc_default;
-      charge.flag_scrut_evse = 0;                             // Lecture de l'EVSE non autorisée
-      charge.flag_lock_evse = 1;                              // Blocage de l'EVSE
-      return;                                                 // Echappement
-    }
-    // Autrement, les Heures Creuses sont en cours...
-    if(charge.parameters.state == charge_state_wait_hc_default ||
-       charge.parameters.state == charge_state_wait_hc)
-      sm_charger_init_state();
   
-  } else {                                                    // La configuration Heures Creuses n'est pas active
-                                                              // Elle a été désactivée par l'utilisateur
-    if(charge.parameters.state == charge_state_wait_hc_default ||
-       charge.parameters.state == charge_state_wait_hc)
-      sm_charger_init_state();
-  }
+  bool restricted_charge = charge.volatile_conf->solar_active || // L'option de charge solaire est active
+						   sm_charger_get_off_peak_hours();	  // L'option Heures Creuses est active
 
+  bool is_enable_charge = charge.flag_force_quick_charge ||	  // La charge rapide est demandée
+						  charge.is_solar_enable         ||	  // La charge solaire est en cours...
+						  charge.is_hc_enable;   			  // Les heures creuses sont en cours...
+
+  // Une restriction de charge est active (Attente Heures Creuses / Solaire)
+  if(restricted_charge) {	  
+    if(is_enable_charge) {									  // Néanmoins, la charge est possible (HC ou Solaire en cours...)
+	  if(charge.parameters.state == charge_state_wait)		  // Nous étions en attente
+	    charge.parameters.state = charge_state_not_Connected; // On recalle en mode VE non connecté
+	} else {												  // Autrement
+	  charge.parameters.state = 							  // On attend !!!
+			(ws_client_is_connected())?charge_state_wait:charge_state_wait_default;
+    
+	  charge.flag_scrut_evse = 0; 							  // Blocage de la lecture de l'EVSE
+      charge.flag_lock_evse = 1;  							  // Blocage de l'EVSE (Charge impossible)
+      return;                     							  // Sortie anticipée
+	}
+  } else {													  // Autrement, il n'y a pas de restriction
+	if(charge.parameters.state == charge_state_wait_default ||// Mais l'IHM est en attente "défaut"
+	   charge.parameters.state == charge_state_wait)		  // ou en attente normal
+	  charge.parameters.state = charge_state_not_Connected;   // On recalle en mode VE non connecté
+  }	  
   sm_charger_manage_degraded_mode();                          // Gestion du mode dégradé basée sur l'état de la socket
 }
 
@@ -504,11 +562,9 @@ void sm_charger_handler(void) {
     memcpy(&previous_charge_parameters,&charge.parameters,sizeof(CHARGE_PARAMETERS_t));
 	// Calcul de la puissance VE
 	if(!charge.static_conf->which_voltage)					  // En monophasé
-	  charge.parameters.power=
-				(charge.parameters.current*230.0f)/1000.0f;
+	  charge.parameters.power = COMPUTE_1PH_POWER(charge.parameters.current);
     else													  // En triphasés
-	  charge.parameters.power=
-				(charge.parameters.current*400.0f*1.73205f)/1000.0f;
+	  charge.parameters.power = COMPUTE_3PH_POWER(charge.parameters.current);
 
     ws_server_send_broadcast(); 
   }

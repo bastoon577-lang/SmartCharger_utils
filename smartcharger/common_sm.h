@@ -6,11 +6,11 @@
 #include "../../hal_utils.h"
 
 //< MACRO de version logicielle SmartCharger_utils
-#define V_SM_LOGICIEL             "v1.0.5"              // Version Logicielle
+#define V_SM_LOGICIEL             "v1.0.6"              // Version Logicielle
 
 //< Define de gestion d'intensite sur 5 bits (optimisation spatiale de l'intensité en mémoire EEPROM)
-#define READ_OFFSET_5B(x)         (x+6)
-#define WRITE_OFFSET_5B(x)        (x-6)
+#define READ_OFFSET_5B(x)         (x+6)					// Lecture de l'offset sur 5 bites
+#define WRITE_OFFSET_5B(x)        (x-6)					// Ecriture de l'offset sur 5 bites
 
 //< Structure de Configurations fonctionnelles figées (Configurable uniquement à la configuration de l'équippement)
 typedef struct
@@ -57,8 +57,11 @@ typedef struct
   uint16_t degraded_current                   :5;       // Intensite dégradée en perte de communication TIC (WARNING : I = intensity + 6)
   uint16_t limite_current                     :5;       // Intensite de charge limite (WARNING : I = intensity + 6)
   uint16_t solar_active						  :1;		// Charge privilégiant l'énergie solaire
+  uint16_t prio_hc_on_solar 				  :1;		// Priorité de puissance HC sur plage solaire
   uint16_t theme                              :1;       // Thème (0 : foncé / 1 : clair)
   uint16_t RUF                                :4;       // Réservé Usage Futures
+  char solar_start_hour[5];								// Heure de début de charge solaire (0800 pour 08H00)
+  char solar_end_hour[5];								// Heure de fin de charge solaire (1900 pour 19H00)
 } VOLATILE_CONF_FIELDS_t;
 
 //< Structure de données TIC extraites au travers du Module TIC et du service WebSocket
@@ -67,6 +70,7 @@ typedef struct
   uint16_t p_injectee;									// Puissance injectée sur le réseau
   uint8_t i_inst[3];									// Intensite phase(s) absorée(s) (Monophasé & Triphasé)
   char tarif[19];										// Tarif actuel appliqué (Heures Creuses/Pleines)
+  char date[14];										// Date courante (Format AAMMJJHHMMSS)
   uint8_t i_max;										// Intensite max pouvant être absorbé avant disjonction
 } TIC_DATA_t;
 
@@ -77,8 +81,8 @@ typedef enum
   charge_state_connected          = 20,
   charge_state_charging           = 30,
   charge_state_charging_degraded  = 31,
-  charge_state_wait_hc            = 40,
-  charge_state_wait_hc_default    = 41,
+  charge_state_wait	              = 40,
+  charge_state_wait_default       = 41,
   charge_state_default            = 50,
   charge_state_default_et3k       = 51
 }CHARGE_STATE_e;

@@ -1,3 +1,4 @@
+// Flux HTML liés à la page de Configuration
 const char* htmlPageConfig PROGMEM = R"rawliteral(
   <div id="container1" class="container active">
     <h1>Bienvenue</h1>
@@ -141,6 +142,7 @@ const char* htmlPageConfig PROGMEM = R"rawliteral(
   </div>
 )rawliteral";
 
+// Flux de scripts JS liés à la page de Configuration
 const char* scriptsPageConfig PROGMEM = R"rawliteral(
   document.querySelectorAll('button[data-action]').forEach(function(button) {
     button.onclick = function() {

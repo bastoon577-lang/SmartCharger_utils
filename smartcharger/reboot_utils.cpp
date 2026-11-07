@@ -18,8 +18,8 @@ void reboot_init(unsigned long ms) {
  * \fn bool reboot_get_button_state(void)
  */
 bool reboot_get_button_state(void) {
-  bool state = hal_get_reboot();                                          // Lecture de l'état de la broche
-  if(state != reboot.previous_state) {                                    // Un changement à eu lieu ?
+  bool state = hal_get_reboot();                              // Lecture de l'état de la broche
+  if(state != reboot.previous_state) {                        // Un changement à eu lieu ?
     reboot.timers[reboot_previous] = millis();
     reboot.triggered = true;
   }    
@@ -48,12 +48,12 @@ void reboot_set(void) {
  * \fn void reboot_handler(void)
  */
 void reboot_handler(void) {
-  if(reboot.flag == false)                                                // Aucun reboot n'a été demandé ?
-    return;                                                               // Echappement immédiat
+  if(reboot.flag == false)                                    // Aucun reboot n'a été demandé ?
+    return;                                                   // Echappement immédiat
   // Autrement, attente du timer de reboot, est-il échue ?
   if(millis() - reboot.timers[reboot_previous] < reboot.timers[reboot_timeout])
-    return;                                                               // Echappement immédiat
+    return;                                                   // Echappement immédiat
 
-  WiFi.disconnect();                                                      // Déconnexion propre du Wifi
-  ESP.restart();                                                          // Reboot de l'ESP_8266
+  WiFi.disconnect();                                          // Déconnexion propre du Wifi
+  ESP.restart();                                              // Reboot de l'ESP_8266
 }

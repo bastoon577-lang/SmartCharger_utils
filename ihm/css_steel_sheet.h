@@ -1,3 +1,4 @@
+// Flux CSS communs (Configuration & Exploitation)
 const char* cssSteelSheet PROGMEM = R"rawliteral(
 body{
 margin: 0;
@@ -112,7 +113,7 @@ to { opacity: 0.5; }
 }
 input{
 width: 80%;
-padding: 10px;
+padding: 10px;	
 margin: 10px 0;
 border-radius: 5px;
 border: none;
@@ -215,6 +216,73 @@ display: flex;
 justify-content: center;
 align-items: center;
 gap: 25px;
+}
+.time-labels {
+display: flex;
+justify-content: space-between;
+width: 80%;
+max-width: 300px;
+margin: 5px auto 0 auto;
+font-weight: bold;
+}
+.dual-range-container {
+position: relative;
+width: 80%;
+max-width: 300px;
+height: 40px;
+margin: 15px auto;
+}
+.dual-range-container input[type="range"] {
+position: absolute;
+left: 0;
+top: 0;
+width: 100%;
+background: transparent !important;
+pointer-events: none;
+-webkit-appearance: none;
+appearance: none;
+margin: 0;
+padding: 0;
+border: none;
+}
+.dual-range-container input[type="range"]::-webkit-slider-runnable-track {
+height: 6px;
+background: #cbd5e1;
+border-radius: 3px;
+border: none;
+}
+.dual-range-container input[type="range"]::-webkit-slider-thumb {
+pointer-events: auto;
+cursor: pointer;
+width: 22px;
+height: 22px;
+border-radius: 50%;
+background: var(--primary);
+-webkit-appearance: none;
+appearance: none;
+margin-top: -8px;
+position: relative;
+z-index: 2;
+border: 2px solid #ffffff;
+box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+.dual-range-container input[type="range"]::-moz-range-track {
+height: 6px;
+background: #cbd5e1;
+border-radius: 3px;
+border: none;
+}
+.dual-range-container input[type="range"]::-moz-range-thumb {
+pointer-events: auto;
+cursor: pointer;
+width: 22px;
+height: 22px;
+border-radius: 50%;
+background: var(--primary);
+border: 2px solid #ffffff;
+box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+position: relative;
+z-index: 2;
 }
 :root{
 --bg-body: #f8fafc;

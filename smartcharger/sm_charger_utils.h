@@ -4,14 +4,22 @@
 #include "common_sm.h"
 
 //< Defines des TIMEOUT
-#define TIMEOUT_SCRUT_WS_TIC      12000     // Temps de scrutation de l'état de connexion WS Module TIC
-#define TIMEOUT_LAST_IVE_INCREASE 6000      // Temps de la dernière augmentation de courant de charge
-#define TIMEOUT_LAST_IVE_DECREASE 2000      // Temps de la dernière diminution de courant de charge
-#define TIMEOUT_SCRUT_EVSE        1000      // Temps de scrutation de l'état de l'EVSE
+#define TIMEOUT_LAST_IVE_INCREASE 	6000    	// Temps de la dernière augmentation de courant de charge
+#define TIMEOUT_LAST_IVE_DECREASE 	2000    	// Temps de la dernière diminution de courant de charge
+#define TIMEOUT_SCRUT_EVSE        	1000    	// Temps de scrutation de l'état de l'EVSE
 
 //< Defines décisionels de puissance
-#define BIG_GAP_GRID_CURRENT      4         // Le GAP est important (aussi bien en surcharge qu'en sous-charge)
-#define NULL_GAP_GRID_CURRENT     0         // Le GAP est très faible (proche de zéro)
+#define BIG_GAP_GRID_CURRENT      	4       	// Le GAP est important (aussi bien en surcharge qu'en sous-charge)
+#define NULL_GAP_GRID_CURRENT     	0       	// Le GAP est très faible (proche de zéro)
+
+//< Define des composantes électriques
+#define VOLTAGE_1PH					230.0f		// Tension du réseau Mono
+#define VOLTAGE_3PH					400.0f		// Tension du réseau Tri
+#define ROOT_3						1.73205f	// Racine de 3 approximée
+
+//< Define de calculs de puissances
+#define COMPUTE_1PH_POWER(x)	  	((x*VOLTAGE_1PH)/1000.0f)
+#define COMPUTE_3PH_POWER(x)	  	((x*VOLTAGE_3PH*ROOT_3)/1000.0f)
 
 //< Enumération des Timers de charge
 typedef enum 
@@ -24,18 +32,19 @@ typedef enum
 //< Structure de données Charger
 typedef struct
 {
-  VOLATILE_CONF_FIELDS_t *volatile_conf;    // Pointeur sur les données VOLATILE_CONF_FIELDS_t
-  STATIC_CONF_FIELDS_t *static_conf;        // Pointeur vers la structure STATIC_CONF_FIELDS_t
-  CHARGE_PARAMETERS_t parameters;           // Paramètres de charge VE
-  uint8_t counter_starting_charge;			// Compteur de début de charge
-  uint8_t is_charge_active     		: 1;    // Bitfield de Charge en cours
-  uint8_t is_limited_charge    		: 1;    // Bitfield de Charge dégradée suite à la perte de connexion au Module TIC
-  uint8_t is_hc_active         		: 1;    // Bitfield d'heures creuses en cours...
-  uint8_t flag_lock_evse       		: 1;    // Bitfield de blocage de l'EVSE
-  uint8_t flag_scrut_evse      		: 1;    // Bitfield de lecture de l'EVSE
-  uint8_t flag_force_quick_charge	: 1;	// Bitfield de forçage de la charge
-  uint8_t flag_prevent_updates 		: 1;	// Bitfield d'autorisation de mise à jour firmware
-  uint8_t RUF 						: 1;	// Réservé Usage Future
+  VOLATILE_CONF_FIELDS_t *volatile_conf;    	// Pointeur sur les données VOLATILE_CONF_FIELDS_t
+  STATIC_CONF_FIELDS_t *static_conf;        	// Pointeur vers la structure STATIC_CONF_FIELDS_t
+  CHARGE_PARAMETERS_t parameters;           	// Paramètres de charge VE
+  uint8_t counter_starting_charge;				// Compteur de début de charge
+  uint16_t is_charge_active    		: 1;    	// Bitfield de Charge en cours
+  uint16_t is_limited_charge    	: 1;    	// Bitfield de Charge dégradée suite à la perte de connexion au Module TIC
+  uint16_t is_solar_enable			: 1;		// Bitfield de charge solaire active
+  uint16_t is_hc_enable				: 1;		// Bitfield d'heures creuses actives
+  uint16_t flag_lock_evse       	: 1;    	// Bitfield de blocage de l'EVSE
+  uint16_t flag_scrut_evse      	: 1;    	// Bitfield de lecture de l'EVSE
+  uint16_t flag_force_quick_charge	: 1;		// Bitfield de forçage de la charge
+  uint16_t flag_prevent_updates 	: 1;		// Bitfield d'autorisation de mise à jour firmware
+  uint16_t RUF 						: 8;		// Réservé Usage Future
 } CHARGER_t;
 
 /**
